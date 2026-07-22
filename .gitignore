@@ -1,0 +1,13 @@
+.venv/
+.env
+*.pyc
+__pycache__/
+.dbt/
+dbt_packages/
+target/
+logs/
+.snowflake/
+data/raw/
+data/interim/
+.DS_Store
+.ipynb_checkpoints/
