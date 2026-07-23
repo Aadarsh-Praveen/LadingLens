@@ -1,0 +1,28 @@
+electronics:
+  - AAPL
+  - DELL
+  - HPQ
+  - NVDA
+  - INTC
+  - AMD
+  - MU
+  - WDC
+  - CSCO
+  - ANET
+  - JNPR
+apparel:
+  - NKE
+  - LULU
+  - VFC
+  - HBI
+  - PVH
+  - TPR
+  - RL
+  - LEVI
+  - GES
+machinery_and_industrial:
+  - CAT
+  - DE
+  - PH
+  - ETN
+  - EMR
