@@ -11,3 +11,7 @@ data/raw/
 data/interim/
 .DS_Store
 .ipynb_checkpoints/
+
+# dbt profiles with real credentials — never commit
+dbt/profiles.yml
+dbt/**/profiles.yml
