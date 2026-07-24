@@ -1,0 +1,49 @@
+hs_chapters_focus:
+- 87
+- 84
+- 39
+- 61
+- 62
+- 73
+origin_countries_focus:
+- DE
+- BE
+- VN
+- ES
+- GB
+- FR
+- MX
+- CN
+spotlight_tickers:
+- ANET
+- LULU
+- PVH
+- LEVI
+- DE
+- HPQ
+- NKE
+- RL
+- WDC
+- AMD
+notes:
+- Automotive (HS 87) and its parts/materials chapters (84 machinery, 39 plastics,
+  73 steel) dominate this NIST sample by both consignee identity (BMW, Mercedes-Benz,
+  Volvo, JLR) and HS-chapter row count -- confirmed in notebooks 01g and 02e, not
+  assumed.
+- 'Apparel (61 knit, 62 woven) retained as a secondary vertical: LULU/LEVI/PVH/NKE/RL/VFC/TPR
+  all loaded successfully with rich Item 1A text and rank among the top supply-chain-risk
+  keyword scorers (notebook 03d).'
+- 'Origin countries pivoted away from a China-centric list to reflect actual BoL volume:
+  Germany, Belgium, and Vietnam dominate by shipment count (notebook 04d); China (Mainland)
+  is present but a minor share (~2%) in this specific sample slice. CN retained in
+  the list (Section 301 remains relevant for the apparel/electronics chapters) but
+  is not the primary driver the original plan assumed.'
+- Electronics (HS 85) and chapter 84 machinery both appear meaningfully in the BoL
+  HS-chapter distribution (notebook 01g) and multiple electronics tickers (ANET, AMD,
+  WDC) rank in the top 10 spotlight companies by supply-chain-risk keyword density
+  -- kept as a tertiary vertical rather than dropped.
+- BMW/Mercedes-Benz/Volvo/JLR (the largest BoL consignees by far) have no confident
+  fuzzy match to any of the 19 loaded SEC 10-K tickers (notebook 04a) -- they are
+  foreign-parent filers not in our target_tickers.yml. Adding parent/ADR tickers (BMWYY,
+  MBGAF, VLVLY, TTM) is deferred to Phase 4, per the human task list in the Phase
+  3 spec.
