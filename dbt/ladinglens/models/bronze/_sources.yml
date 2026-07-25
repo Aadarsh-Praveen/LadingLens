@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: raw
+    database: LADINGLENS_DB
+    schema: RAW
+    tables:
+      - name: bol_shipments
+        identifier: BOL_SHIPMENTS
+      - name: hts_tariff_schedule
+        identifier: HTS_TARIFF_SCHEDULE
+      - name: sec_10k_filings
+        identifier: SEC_10K_FILINGS

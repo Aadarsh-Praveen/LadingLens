@@ -26,3 +26,39 @@ machinery_and_industrial:
   - PH
   - ETN
   - EMR
+foreign_parents_and_retail:
+  - ticker: WMT
+    cik: "0000104169"
+    filing_type: 10-K
+  - ticker: STLA
+    cik: "0001605484"
+    filing_type: 20-F
+  # VWAGY: no valid CIK exists. The CIK originally listed here (0000723612)
+  # was wrong -- confirmed via EDGAR lookup to belong to Avis Budget Group,
+  # Inc., an unrelated US company. EDGAR full-text search for Volkswagen AG
+  # as a 20-F *filer* (not just mentioned in others' filings) returns zero
+  # results -- VW deregistered/does not file 20-F with the SEC (its VWAGY
+  # ADR trades OTC without SEC reporting obligations). Confirmed 2026-07-25
+  # during the Phase 4 20-F retry; not a script bug, no fix possible.
+  - ticker: TTM
+    cik: "0000926042"  # corrected 2026-07-25; original (0001269823) pointed to an unrelated entity ("EV LLC")
+    filing_type: 20-F
+retry_with_explicit_cik:
+  - ticker: DELL
+    cik: "0001571996"
+    filing_type: 10-K
+  - ticker: INTC
+    cik: "0000050863"
+    filing_type: 10-K
+  - ticker: EMR
+    cik: "0000032604"
+    filing_type: 10-K
+  - ticker: JNPR
+    cik: "0001043604"
+    filing_type: 10-K
+  - ticker: HBI
+    cik: "0001359841"
+    filing_type: 10-K
+  - ticker: GES
+    cik: "0000912463"
+    filing_type: 10-K

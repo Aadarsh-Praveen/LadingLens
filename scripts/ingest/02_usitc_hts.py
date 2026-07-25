@@ -13,11 +13,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import requests
-import snowflake.connector
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=REPO_ROOT / ".env")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _snowflake_conn import connect  # noqa: E402
 
 HTS_URL = "https://hts.usitc.gov/reststop/exportList?from=0&to=99&format=JSON&styles=false"
 HTS_FALLBACK_URL = "https://hts.usitc.gov/reststop/file?filename=htsdata.json"
@@ -25,19 +27,6 @@ RAW_DIR = REPO_ROOT / "data" / "raw" / "hts"
 
 TABLE = "LADINGLENS_DB.RAW.HTS_TARIFF_SCHEDULE"
 STAGE = "LADINGLENS_DB.STAGE.RAW_STAGE"
-
-
-def connect():
-    return snowflake.connector.connect(
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ.get("SNOWFLAKE_PASSWORD"),
-        authenticator=os.environ.get("SNOWFLAKE_AUTHENTICATOR", "snowflake"),
-        role=os.environ.get("SNOWFLAKE_ROLE"),
-        warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE"),
-        database=os.environ.get("SNOWFLAKE_DATABASE"),
-        schema=os.environ.get("SNOWFLAKE_SCHEMA"),
-    )
 
 
 def download_hts():

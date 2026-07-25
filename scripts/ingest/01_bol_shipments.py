@@ -13,11 +13,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import snowflake.connector
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=REPO_ROOT / ".env")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _snowflake_conn import connect  # noqa: E402
 
 BOL_FILE = REPO_ROOT / "data" / "raw" / "bol" / "export_sample_countries_challenge_with_orgs.csv.gz"
 GDRIVE_URL = "https://drive.google.com/open?id=1tMkoOGF9lC6RJXm5DzmFJlvcIprTY0mI"
@@ -65,19 +67,6 @@ COLUMNS = [
     ("identified_orgs", "VARCHAR"),
 ]
 LOAD_COLUMN_NAMES = [c for c, _ in COLUMNS]
-
-
-def connect():
-    return snowflake.connector.connect(
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ.get("SNOWFLAKE_PASSWORD"),
-        authenticator=os.environ.get("SNOWFLAKE_AUTHENTICATOR", "snowflake"),
-        role=os.environ.get("SNOWFLAKE_ROLE"),
-        warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE"),
-        database=os.environ.get("SNOWFLAKE_DATABASE"),
-        schema=os.environ.get("SNOWFLAKE_SCHEMA"),
-    )
 
 
 def check_prerequisite():

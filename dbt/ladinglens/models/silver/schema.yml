@@ -1,0 +1,144 @@
+version: 2
+
+models:
+  - name: silver_supplier_golden
+    description: >
+      Golden supplier entities from connected-components clustering over
+      embedding + char-similarity scored name pairs (match_score >= 0.92).
+      Compression is modest (~1.2x, raw names to golden entities) by design:
+      the 0.92 threshold favors precision over recall to avoid merging
+      same-brand-different-legal-entity pairs (e.g. DHL Belgium and DHL
+      Luxembourg), which would falsely aggregate concentration exposure
+      across independent companies. Known consequence: some legitimate
+      same-entity name variants that land in the 0.80-0.92 review band stay
+      split into separate golden records rather than being auto-merged.
+      Placeholder names (TO ORDER, UNKNOWN, etc.) are excluded upstream and
+      never appear here except as their own unclustered singleton records.
+    columns:
+      - name: golden_supplier_id
+        description: MD5 hash of canonical_name + registered country. One row per resolved supplier entity.
+        tests:
+          - unique
+          - not_null
+      - name: canonical_name
+        description: Human-readable representative name -- the highest-shipment-count raw name variant in the cluster.
+        tests:
+          - not_null
+
+  - name: silver_consignee_golden
+    description: >
+      Golden consignee entities from connected-components clustering over
+      embedding + char-similarity scored name pairs (match_score >= 0.92).
+      Compression is modest (~1.2x, raw names to golden entities) by design:
+      the 0.92 threshold favors precision over recall to avoid merging
+      same-brand-different-legal-entity pairs (e.g. Mercedes-Benz U.S. and
+      Mercedes-Benz Vans LLC), which would falsely aggregate concentration
+      exposure across independent legal entities. Known consequence: some
+      legitimate same-entity name variants that land in the 0.80-0.92 review
+      band stay split into separate golden records rather than being
+      auto-merged -- see the model's header comment for the full threshold
+      rationale. Placeholder names (TO ORDER, UNKNOWN, etc.) are excluded
+      upstream and never appear here except as their own unclustered
+      singleton records.
+    columns:
+      - name: golden_consignee_id
+        description: MD5 hash of canonical_name + registered country. One row per resolved consignee entity.
+        tests:
+          - unique
+          - not_null
+      - name: canonical_name
+        description: Human-readable representative name -- the highest-shipment-count raw name variant in the cluster.
+        tests:
+          - not_null
+
+  - name: silver_bol_shipments
+    description: >
+      Final scoped fact-ready Silver table: bronze_bol shipments joined to
+      golden supplier/consignee entities, filtered to config/target_scope.yml
+      (HS chapters 87/84/39/61/62/73, origin countries DE/BE/VN/ES/GB/FR/MX/CN).
+      52,611 rows -- smaller than the original phase-plan estimate because
+      that estimate predated the corrected (identifier, container_number)
+      Bronze dedup grain; see data/sources.md for the reconciliation.
+    columns:
+      - name: identifier
+        tests:
+          - not_null
+      - name: container_number
+        tests:
+          - not_null
+      - name: golden_supplier_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('silver_supplier_golden')
+              field: golden_supplier_id
+      - name: golden_consignee_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('silver_consignee_golden')
+              field: golden_consignee_id
+      - name: consignee_party_type
+        tests:
+          - accepted_values:
+              values: ['freight_forwarder', 'importer']
+
+  - name: int_supplier_pair_scored
+    description: >
+      Blocked supplier name pairs scored on 0.7*embedding_cosine_similarity +
+      0.3*char_similarity. match_label buckets at the locked 0.92/0.80
+      thresholds -- see silver_consignee_golden.sql for the threshold
+      rationale (same logic applies to suppliers).
+    columns:
+      - name: match_label
+        tests:
+          - accepted_values:
+              values: ['match', 'review', 'no_match']
+
+  - name: int_consignee_pair_scored
+    description: >
+      Blocked consignee name pairs scored on 0.7*embedding_cosine_similarity +
+      0.3*char_similarity. match_label buckets at the locked 0.92/0.80
+      thresholds -- see silver_consignee_golden.sql for the threshold
+      rationale.
+    columns:
+      - name: match_label
+        tests:
+          - accepted_values:
+              values: ['match', 'review', 'no_match']
+
+  - name: int_supplier_name_normalized
+    description: >
+      Distinct raw supplier names normalized for entity resolution, with
+      is_forwarder and is_placeholder classification flags and a blocking_key
+      for pairwise ER. Placeholder names (TO ORDER, UNKNOWN, NA, etc.) are
+      flagged here and excluded from pair candidacy downstream in
+      int_supplier_pair_candidates.sql -- they still flow through to
+      silver_bol_shipments as unclustered singletons.
+    columns:
+      - name: shipper_name_norm
+        tests:
+          - not_null
+      - name: is_placeholder
+        tests:
+          - accepted_values:
+              values: [true, false]
+              quote: false
+
+  - name: int_consignee_name_normalized
+    description: >
+      Distinct raw consignee names normalized for entity resolution, with
+      is_forwarder and is_placeholder classification flags and a blocking_key
+      for pairwise ER. Placeholder names (TO ORDER, UNKNOWN, NA, etc.) are
+      flagged here and excluded from pair candidacy downstream in
+      int_consignee_pair_candidates.sql -- they still flow through to
+      silver_bol_shipments as unclustered singletons.
+    columns:
+      - name: consignee_name_norm
+        tests:
+          - not_null
+      - name: is_placeholder
+        tests:
+          - accepted_values:
+              values: [true, false]
+              quote: false
