@@ -4,10 +4,21 @@
     )
 }}
 
--- Final scoped fact-ready Silver table: bronze_bol shipments joined to
--- golden supplier/consignee entities, filtered to config/target_scope.yml's
--- HS chapters (87/84/39/61/62/73 -- vehicles, machinery, plastics, apparel,
--- steel) and origin countries (DE/BE/VN/ES/GB/FR/MX/CN).
+-- Fact-ready Silver table: bronze_bol shipments joined to golden
+-- supplier/consignee entities, filtered to config/target_scope.yml's origin
+-- countries (DE/BE/VN/ES/GB/FR/MX/CN) ONLY -- NOT HS chapter.
+--
+-- HS-chapter scoping (87/84/39/61/62/73) intentionally does NOT happen here
+-- anymore (Phase 5 refactor). The original single-model design filtered on
+-- HS chapter directly in this model, which by construction meant every row
+-- here already had a non-null harmonized_number_final -- making it
+-- impossible for Phase 5 to ever find a NULL-HS row to classify (the
+-- population it needed to classify had already been filtered out of
+-- existence). Fix: this model now scopes by origin country only, so
+-- NULL-HS rows survive into it. silver_bol_shipments_classified.sql adds
+-- the unified hs_code column (source field / regex / LLM), and
+-- silver_bol_shipments_scoped.sql applies the HS-chapter filter LAST, after
+-- classification -- that's the model Phase 6+ should consume.
 --
 -- Joins to the raw-name-grain golden maps (int_supplier_golden_map /
 -- int_consignee_golden_map), not the cluster-grain golden tables, since
@@ -62,6 +73,7 @@ select
     s.harmonized_number_final,
     s.hs_source,
     s.hs_chapter,
+    s.text,
     s.harmonized_value,
     s.harmonized_weight,
     s.harmonized_weight_unit,
@@ -81,5 +93,4 @@ select
 from scoped s
 inner join {{ ref('int_supplier_golden_map') }} sup on s.shipper_party_name = sup.shipper_name_raw
 inner join {{ ref('int_consignee_golden_map') }} con on s.consignee_name = con.consignee_name_raw
-where s.hs_chapter in ('87', '84', '39', '61', '62', '73')
-  and s.shipment_origin_country in ('DE', 'BE', 'VN', 'ES', 'GB', 'FR', 'MX', 'CN')
+where s.shipment_origin_country in ('DE', 'BE', 'VN', 'ES', 'GB', 'FR', 'MX', 'CN')

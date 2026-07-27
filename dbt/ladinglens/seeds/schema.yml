@@ -1,0 +1,34 @@
+version: 2
+
+seeds:
+  - name: hs_eval_seed
+    description: "30 hand-labeled BoL product descriptions with correct HS-6 codes. Used to evaluate HS classifier accuracy in Phase 5. Superseded by hs_eval_seed_v2 -- kept for history, only 12 of 30 rows have a verbatim-matching text anywhere in Bronze (see data/sources.md)."
+    columns:
+      - name: product_description
+        description: "Raw text of the shipment product description as filed with CBP"
+        tests: [not_null]
+      - name: correct_hs_6
+        description: "Hand-assigned HS-6 code. '999999' marks descriptions that are too ambiguous for confident classification."
+        tests: [not_null]
+      - name: notes
+        description: "Reason for ambiguous cases, alternate HS candidates, or classification rationale."
+
+  - name: hs_eval_seed_v2
+    description: >
+      30 rows sampled directly from silver_bol_shipments_scoped (LLM-classified
+      rows only), hand-labeled against USITC HS-6 descriptions. Built to replace
+      hs_eval_seed after discovering that seed's product_description values
+      don't appear verbatim in Bronze for most rows. product_text is the exact
+      raw text as stored in silver_bol_shipments_classified.text -- joins to it
+      should use equality, not a fuzzy LIKE match.
+    columns:
+      - name: product_text
+        description: "Raw shipment text, copied verbatim from silver_bol_shipments_scoped.text"
+        tests: [not_null]
+      - name: classifier_prediction
+        description: "hs_code_unified as originally classified, captured at sampling time for reference"
+      - name: correct_hs_6
+        description: "Hand-assigned HS-6 code. '999999' marks descriptions that are too ambiguous for confident classification."
+        tests: [not_null]
+      - name: notes
+        description: "Reason for ambiguous cases or classification rationale."

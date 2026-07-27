@@ -38,3 +38,22 @@ models:
     gold:
       +materialized: table
       +schema: gold
+
+# correct_hs_6 must stay varchar -- CSV type inference would otherwise cast
+# it to a number, silently dropping a leading zero on any future HS-6 code
+# in chapters 01-09 (none of the current 30 rows have one, but real ones do).
+seeds:
+  ladinglens:
+    hs_eval_seed:
+      +column_types:
+        product_description: varchar
+        correct_hs_6: varchar
+        notes: varchar
+    hs_eval_seed_v2:
+      +column_types:
+        product_text: varchar
+        classifier_prediction: varchar
+        hs_source_final: varchar
+        predicted_chapter: varchar
+        correct_hs_6: varchar
+        notes: varchar

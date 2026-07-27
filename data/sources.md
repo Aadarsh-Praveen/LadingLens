@@ -175,3 +175,173 @@
   share no 8-character prefix (e.g., MERCEDES-BENZ ↔ DAIMLER MERCEDES). Requires
   secondary blocking pass via coarse embedding clusters. Documented as a scope
   boundary; production ER systems typically implement this as a second matching pass.
+
+## Phase 5
+
+- **Phase 5 refactor note:** `silver_bol_shipments`'s HS-chapter scope filter was moved
+  AFTER classification (to a new `silver_bol_shipments_scoped` model) to enable
+  classification of the ~54% of shipments that lacked HS codes upstream. The original
+  single-model design filtered on HS chapter directly inside `silver_bol_shipments`,
+  which by construction meant every row in it already had a non-null
+  `harmonized_number_final` — making it impossible for Phase 5 to ever find a NULL-HS
+  row to classify (the population it needed had already been filtered out of existence
+  before Phase 5 could see it). `silver_bol_shipments` now contains **333,739 rows**
+  scoped by origin-country only (DE/BE/VN/ES/GB/FR/MX/CN) — notably higher than the
+  ~80-120K originally estimated for this refactor, because origin-country scope alone
+  retains 92% of Bronze (419,038 of 456,014 rows) before the golden-ID join narrows it
+  to 333,739. Of these, 174,269 (52.2%) have no HS code yet (`hs_source IS NULL`) — this
+  is the real population Phase 5 classifies, closely tracking Bronze's overall 54.4%
+  NULL-HS rate as expected. `silver_bol_shipments_classified` will add the unified
+  `hs_code` column (source field / regex / LLM). `silver_bol_shipments_scoped` will
+  apply the HS-chapter filter (84/87/39/61/62/73) last, after classification — that's
+  the final analytical base Phase 6+ should consume.
+
+- **Phase 5 wrap — HS Classification:**
+
+    Approach: retrieval-augmented Cortex classification. Two-stage system:
+    1. RETRIEVAL: 768-dim e5-base-v2 embeddings of both HTS descriptions and product texts;
+       a Snowpark Python UDTF using numpy matrix multiplication computes top-5 nearest HS-6
+       candidates per product text. Chapters 98-99 (administrative special classifications)
+       excluded from the candidate pool after diagnostics showed their generic
+       cross-referencing language ("Goods provided for in note X to this subchapter")
+       dominating confident-wrong top-1 predictions on ambiguous inputs.
+    2. LLM CLASSIFICATION: llama3.1-8b via SNOWFLAKE.CORTEX.AI_COMPLETE receives product text
+       + top-5 candidates, hardened prompt with three permissions: (a) override candidates
+       when they don't fit, (b) return 999999 for genuinely ambiguous inputs, (c) return HS-4
+       heading only when subheading precision isn't justified.
+    3. PARSING: split-model refactor (`int_hs_classified_raw` calls the LLM once;
+       `int_hs_classified` parses its stored output) so parsing logic can be iterated on
+       without re-running ~$20 of LLM calls. Handles HS-6 exact, dotted-format, and HS-4
+       heading-only responses; a first-pass regex requiring exactly 6 consecutive digits
+       had mislabeled 98% of legitimate HS-4/dotted responses as "parse failures."
+
+    Final Silver population (`silver_bol_shipments_scoped`): **89,200 rows** across HS
+    chapters 87/84/39/61/62/73 (up from 52,611 pre-classification in Phase 4 — LLM
+    classification meaningfully expanded the in-scope population). Chapter breakdown:
+    84 machinery (35,867), 87 vehicles (19,643), 39 plastics (18,316), 73 steel (12,029),
+    61 apparel (1,708), 62 apparel (1,637).
+
+    Classification breakdown of the population needing LLM classification (72,772 distinct
+    normalized product texts, standing in for 333,739 origin-country-scoped shipments):
+    - LLM classified HS-6 (exact or dotted format): 84.7%
+    - LLM classified HS-4 heading only: 11.8%
+    - LLM unclassifiable (999999, correct conservative refusal): 3.4%
+    - LLM parse failed (genuinely malformed response): 0.2%
+
+    hs_source_final distribution across the full 333,739-shipment population:
+    llm_classified_hs6 43.3%, source_field 31.9%, regex_from_text 15.9%,
+    llm_classified_hs4 5.5%, llm_unclassifiable 2.2%, unresolved 1.0% (raw text too short
+    to classify, e.g. "WINE", "HAM", "."), llm_parse_failed 0.2%.
+
+    Accuracy against `hs_eval_seed_v2` (30 rows sampled directly from
+    `silver_bol_shipments_scoped`'s LLM-classified rows, hand-labeled against USITC
+    HS-6 descriptions — supersedes the original `hs_eval_seed`, see below for why):
+    - Match rate: 30/30 — v2's `product_text` is copied verbatim from
+      `silver_bol_shipments_classified.text` at sampling time, so the join to re-fetch
+      predictions is a plain equality, no fuzzy matching or fan-out risk involved.
+    - HS-6 (exact subheading): 5/30 (16.7%)
+    - HS-4 (heading): 10/30 (33.3%)
+    - HS-2 (chapter): 14/30 (46.7%)
+    - Correct refusals on 999999-labeled ambiguous rows: 0/4 — all 4 ambiguous seed
+      rows ("WRAPPING MATERIALS", a personal-effects shipment, "SEMI ROOT TRIMMING
+      STAND", a "MARKETING" line item) got a specific wrong code instead of refusing.
+      The full-population unclassifiable rate is a healthier 3.4%, so this reflects the
+      specific hard cases sampled into this 30-row set, not the classifier's general
+      refusal behavior — but 0/4 on a properly-aligned, exact-match seed is a real
+      signal that the conservative-refusal instruction under-fires on inputs that read
+      as vague to a human but don't trigger the model's own vagueness threshold.
+    - Failure pattern in the 15 "miss" rows: several are near-misses where the LLM
+      picked a plausible-sounding but wrong subheading within roughly the right
+      industrial area (e.g. tractor-parts texts landing in machinery/steel chapters
+      instead of chapter 84/87 specifically), and a few are Bronze regex-extraction
+      artifacts predating the LLM (e.g. "WELCHS...HS: 17049065" — the embedded
+      "17049065" is a fragment of a longer document/PO reference, not a real HS code,
+      but the digit-shaped substring found its way into `harmonized_number_final`
+      upstream in Bronze, so both Welch's-juice rows are wrong for a reason unrelated
+      to the Phase 5 classifier at all).
+
+    **Seed methodology caveat**: `hs_eval_seed_v2`'s labels were drafted with LLM
+    assistance (Claude, referencing USITC/tariffnumber HS-6 code descriptions), then
+    reviewed by a human, rather than fully independent human labeling on all 30 rows —
+    an interview-defensible evaluation would use the latter, but the project timeline
+    didn't accommodate it. Treat the reported accuracy as a floor estimate, not a
+    precise ground-truth score. The qualitative spot-checks across distinct product
+    categories from Steps 3-4.5 (correct chapter-39 plastics override for vinyl
+    flooring, correct swine-meat HS-4 for frozen pork variants, a correct `980500`
+    override reading an embedded code directly out of the text for a military
+    household-goods shipment, consistent automotive-parts resolution to `870899`)
+    remain the primary evidence of classifier behavior; this seed adds a
+    quantitative floor alongside them, not a replacement for them.
+
+    **Why hs_eval_seed_v2 replaces the original hs_eval_seed**: the original 30-row
+    seed (hand-labeled before Phase 4/5) had a real, pre-existing data-alignment
+    problem — its `product_description` values don't appear verbatim (even
+    case/whitespace-normalized) in `bronze_bol.text` for most rows; only 12 of 30
+    matched anywhere in the full unscoped Bronze table. No join strategy could recover
+    more than about half the seed regardless of fuzziness (a whitespace-normalized,
+    length-guarded bidirectional substring join topped out at 16/30, and a naive
+    version of that join was confirmed to let a degenerate raw-text value of a single
+    "." poison matches for six unrelated seed rows via coincidental decimal-point
+    substring collisions before a length guard fixed it). Rather than keep
+    characterizing classifier accuracy through a seed with a ~50% unresolvable
+    alignment gap, `hs_eval_seed_v2` was built by sampling directly from the table
+    being evaluated, guaranteeing every row is matchable by construction.
+
+    Reported accuracy numbers (v2, on 30 rows sampled from silver_bol_shipments_scoped):
+    - HS-2 (chapter): 46.7% (14/30)
+    - HS-4 (heading): 33.3% (10/30)
+    - HS-6 (subheading): 16.7% (5/30)
+    - Correct refusal on 4 ambiguous-labeled rows: 0/4
+
+    Methodological caveats:
+    1. Seed labels were drafted with LLM assistance and human-reviewed, not fully-independent
+       expert labeling. Reported numbers are a floor estimate — some classifier "misses" may
+       be defensible alternative classifications where two HS-6 codes fit the description
+       (e.g., "PLASTIC AUTOMOTIVE PARTS" defensibly maps to either 3917 plastic tubes
+       or 8708 auto parts).
+    2. 2 of 11 outright misses trace to a Bronze-layer artifact (Phase 4 regex mis-extracted
+       a P.O. reference "17049065" as an HS code on the Welch's fruit juice rows), not a
+       Phase 5 classifier defect. Recorded as an open item for future Bronze regex hardening.
+    3. Correct-refusal rate of 0/4 measures epistemic conservatism. Real customs brokers
+       pick a best-guess HS-6 rather than refuse, so the LLM's guess-over-refuse behavior
+       may align more with real customs practice than with our seed's 999999-labeled rows.
+       Refusal rate is a debatable quality metric for this domain.
+    4. Qualitative spot-checks across distinct product categories from Steps 3-4.5 — vinyl
+       flooring correctly overridden to chapter 39, frozen pork resolved to chapter 02,
+       correct 980500 override reading embedded code from text — remain the primary
+       evidence of classifier behavior on well-formed inputs.
+
+    Value contribution of Phase 5:
+    - Coverage: scoped analytical base grew from 52,611 (Phase 4) to 89,200 shipments
+      (+69%), with HS 84 machinery growing from 20,791 to 35,867 and HS 87 vehicles from
+      11,627 to 19,643.
+    - At chapter level (HS-2), the classifier is right ~47% of the time on random samples,
+      providing directional signal for downstream concentration analysis at chapter grain.
+    - The classifier's HS-4/HS-6 accuracy is meaningfully lower and should not be relied
+      on for row-level tariff exposure computation without additional validation.
+
+    Structural limitations (documented, deferred as future work):
+    - Short single-word product names ("MACARONI", "BMW") underperform because general-
+      purpose sentence embeddings under-encode short inputs.
+    - The 999999 refusal permission is under-triggered — the LLM prefers guessing over
+      refusing.
+    - Bronze-layer HS regex extraction has a false-positive pattern on P.O./reference
+      numbers that visually resemble HS codes. Fix would be a stricter regex requiring
+      explicit HS/HTS prefix keywords with a word boundary.
+    - Heavy-logistics-noise descriptions (VIN + fax numbers + boilerplate) sometimes cannot
+      be recovered even by the LLM override (e.g. a kiln-dried-pine-lumber shipment buried
+      under container-marking noise retrieved zero wood-chapter candidates). Would benefit
+      from a text-cleaning pass that strips more logistics vocabulary before classification.
+
+    Phase 5 Cortex spend: not yet visible in `CORTEX_FUNCTIONS_USAGE_HISTORY` as of this
+    writing (reporting lag exceeded 6+ hours for this run) — expected ~$20 based on the
+    73,288-call estimate at ~460 tokens/call; will backfill once the lag clears.
+    Total Phase 5 wall time: ~1 hour across all steps, dominated by three multi-hour dead
+    ends on the retrieval-candidates step alone (a naive SQL cross join ran 10+ hours
+    unresolved on XS; a 10-way hash-batched version still didn't finish in 30 minutes even
+    on a 4x-larger MEDIUM warehouse) before a Snowpark UDTF rewrite solved it in 17 seconds
+    — confirming the bottleneck was CPU-bound vector-math cost, not memory spill or
+    warehouse size.
+    Total data-quality catches in Phase 5: 5 primary + 3 additional (macro extraction,
+    fuzzy-LIKE join contamination, Welch's Bronze regex artifact discovered during v2
+    labeling). Cumulative Phase 4 + Phase 5 catches: 25.
