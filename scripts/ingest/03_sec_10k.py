@@ -54,10 +54,49 @@ MIN_ITEM_1A_CHARS = 5000
 ITEM_1A_START = re.compile(r"item\s*1a\.?\s*risk\s*factors", re.IGNORECASE)
 ITEM_1B_END = re.compile(r"item\s*1b\.?\s*unresolved", re.IGNORECASE)
 ITEM_7_START = re.compile(
-    r"item\s*7\.?\s*management.?s\s*discussion\s*and\s*analysis", re.IGNORECASE
+    r"item\s*7\.?\s*management.{0,10}s\s*discussion\s*and\s*analysis", re.IGNORECASE
 )
 ITEM_7A_END = re.compile(r"item\s*7a\.?\s*quantitative", re.IGNORECASE)
 ITEM_8_END = re.compile(r"item\s*8\.?\s*financial\s*statements", re.IGNORECASE)
+
+# Phase 7 catch: ITEM_1B_END alone silently failed to match on 13 of 24 filers
+# (no "Item 1B" heading in a form the regex recognized), and extract_section's
+# fallback -- "no end match -> take the rest of the document" -- meant item_1a_text
+# ran through governance/MD&A/financial-statements/the audit opinion letter for
+# those rows. Broadened with three fallback end-boundaries so a missing Item 1B
+# heading doesn't blow the extraction out to end-of-document; extract_section
+# already takes the earliest match across the whole end_pats list.
+UNRESOLVED_STAFF_COMMENTS = re.compile(r"unresolved\s*staff\s*comments", re.IGNORECASE)
+ITEM_2_LINE_START = re.compile(r"^\s*item\s*2\b", re.IGNORECASE | re.MULTILINE)
+ITEM_2_PROPERTIES = re.compile(r"item\s*2\.?\s*properties", re.IGNORECASE)
+
+# Runaway-extraction guard: if item_1a_text is long AND contains an audit firm's
+# name, the section almost certainly ran through the auditor's report (i.e. past
+# Item 8 entirely) -- truncate at the earliest of an audit-firm mention or an
+# Item 8 Financial Statements marker.
+AUDIT_FIRM_NAMES = re.compile(
+    r"ernst\s*&\s*young|deloitte|kpmg|pricewaterhousecoopers|\bpwc\b", re.IGNORECASE
+)
+RUNAWAY_LENGTH_THRESHOLD = 50000
+
+
+def apply_runaway_guard(text):
+    """Truncate item_1a_text if it likely ran past Item 1A into later items.
+
+    Only triggers above RUNAWAY_LENGTH_THRESHOLD chars AND an audit-firm name
+    present -- short filings and filings that legitimately quote an audit firm
+    name in passing (rare, but possible) are left untouched.
+    """
+    if len(text) <= RUNAWAY_LENGTH_THRESHOLD:
+        return text
+    audit_match = AUDIT_FIRM_NAMES.search(text)
+    if not audit_match:
+        return text
+    item8_match = ITEM_8_END.search(text)
+    cut_positions = [audit_match.start()]
+    if item8_match:
+        cut_positions.append(item8_match.start())
+    return text[: min(cut_positions)].strip()
 
 # 20-F section markers (foreign private issuers). Item 3.D = risk factors,
 # the 20-F equivalent of 10-K Item 1A. Item 5 = Operating and Financial
@@ -71,7 +110,20 @@ ITEM_6_END = re.compile(r"item\s*6\.?\s*directors", re.IGNORECASE)
 
 SECTION_MARKERS = {
     "10-K": {
-        "primary": (ITEM_1A_START, [ITEM_1B_END]),
+        "primary": (
+            ITEM_1A_START,
+            [
+                ITEM_1B_END,
+                UNRESOLVED_STAFF_COMMENTS,
+                ITEM_2_LINE_START,
+                ITEM_2_PROPERTIES,
+                ITEM_7_START,  # last-resort backstop: several filers' Item 1B/2
+                                # headings didn't match any pattern above, letting
+                                # extraction run through Item 7A market-risk tables
+                                # and financial-statement notes before the runaway
+                                # guard's audit-firm check finally caught it.
+            ],
+        ),
         "secondary": (ITEM_7_START, [ITEM_7A_END, ITEM_8_END]),
     },
     "20-F": {
@@ -212,6 +264,7 @@ def download_and_parse(ticker, cik, filing_type):
     primary_pat, primary_ends = SECTION_MARKERS[filing_type]["primary"]
     secondary_pat, secondary_ends = SECTION_MARKERS[filing_type]["secondary"]
     item_primary = extract_section(plain_text, primary_pat, primary_ends)
+    item_primary = apply_runaway_guard(item_primary)
     item_secondary = extract_section(plain_text, secondary_pat, secondary_ends)
 
     accession_nodash = accession_dir.name.replace("-", "")

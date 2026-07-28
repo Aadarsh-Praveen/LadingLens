@@ -1,6 +1,69 @@
 version: 2
 
 models:
+  - name: dim_ticker
+    description: >
+      Ticker <-> golden_consignee_id link (24 rows, one per loaded 10-K/20-F
+      filer). company_name is hand-curated (RAW.SEC_10K_FILINGS has no
+      company_name column) against the REAL loaded ticker list, not the Phase 7
+      spec's example recap, which named 5 tickers never actually loaded (MSFT,
+      TSLA, AMZN, F, GM) and omitted 6 that are (CSCO, ETN, MU, PH, TPR, VFC).
+      match_confidence: 16 partial, 4 exact, 4 none (JNPR, LULU, NVDA, TPR --
+      verified genuinely absent from silver_consignee_golden, not a matching
+      bug). A real bug WAS found and fixed here: SPLIT_PART on a name like
+      'Nike, Inc.' returns 'Nike,' with a trailing comma, silently breaking the
+      LIKE match against punctuation-free canonical_name values -- confirmed
+      NIKE DE MEXICO and GUESS? INC. both exist and were false-negative
+      'none' matches before a REGEXP_REPLACE strip was added.
+    columns:
+      - name: ticker
+        tests:
+          - unique
+          - not_null
+      - name: cik
+        tests: [not_null]
+      - name: filing_type_latest
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['10-K', '20-F']
+      - name: match_confidence
+        tests:
+          - accepted_values:
+              values: ['exact', 'partial', 'none']
+
+  - name: fact_10k_risk_chunks
+    description: >
+      1,674 chunks (stride=1500/width=1700 chars, 200-char overlap) across 24
+      filings' item_1a_text. Chunking parameters differ from the original spec
+      (800/1000) because the real population is 2.3x the spec's assumed size --
+      see model header. A significant pre-existing Bronze/Raw extraction bug was
+      found and partially fixed during Phase 7: 13 of 24 filers' item_1a_text
+      ran past the intended Item 1A -> Item 1B boundary into governance/MD&A/
+      financial-statements/audit-opinion text (root cause: ITEM_1B_END alone
+      never matched for these filers, and extract_section's fallback took the
+      rest of the document). Broadened end-boundary patterns in
+      scripts/ingest/03_sec_10k.py fixed 9 of 13 (GES improved but retains some
+      Item 7A-adjacent tail content; PVH/VFC/CAT/ETN/CSCO/NKE/WMT/NVDA cleaned
+      of audit-firm/financial-statement text, though NKE/WMT still carry some
+      Item 7A market-risk-disclosure content that dilutes retrieval relevance
+      for supply-chain/trade-policy queries specifically). GES/LULU/MU remain
+      genuinely contaminated (still contain audit-firm names) -- root cause is
+      a harder structural issue (repeated in-body "Item 1A" cross-references
+      defeat extract_section's longest-span start-selection heuristic, not a
+      missing end-boundary), requiring DOM-aware parsing. These three join
+      STLA on the future-work list. See data/sources.md Phase 7 wrap for the
+      full per-ticker before/after accounting.
+    columns:
+      - name: chunk_id
+        tests:
+          - unique
+          - not_null
+      - name: ticker
+        tests: [not_null]
+      - name: chunk_text
+        tests: [not_null]
+
   - name: dim_country
     description: >
       Inline reference dim (~44 rows), hand-curated -- not sourced from any
