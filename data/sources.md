@@ -345,3 +345,118 @@
     Total data-quality catches in Phase 5: 5 primary + 3 additional (macro extraction,
     fuzzy-LIKE join contamination, Welch's Bronze regex artifact discovered during v2
     labeling). Cumulative Phase 4 + Phase 5 catches: 25.
+
+## Phase 6
+
+- **Phase 6 wrap — Gold Star Schema + Semantic View:**
+
+    Gold layer built as a Kimball star schema over `silver_bol_shipments_scoped`
+    (89,200 shipments):
+    - `dim_country` (44 rows, hand-curated reference data; only 8 countries actually
+      appear in the fact table — BE/CN/DE/ES/FR/GB/MX/VN, per Phase 3's EU-auto/
+      Vietnam-apparel scope), `dim_hs_code` (6,630 HS-6 rows aggregated from
+      `bronze_hts`'s HS8/HS10 line items), `dim_supplier` (41,338), `dim_consignee`
+      (40,629), `dim_date` (5,113 rows, 2013-01-01 through 2026-12-31).
+    - `fact_shipments`: 89,200 rows with `effective_duty_rate_pct` /
+      `estimated_landed_cost_usd` reflecting the CURRENT (Q3 2026) tariff regime only
+      (per explicit design decision — time-varying tariff logic against
+      `fact_tariff_events` is deferred to Phase 8's scenario simulator).
+    - `fact_tariff_events`: 12 hand-curated Section 232/301 events, 2018-2025.
+    - `mart_concentration_metrics`: 27,041 consignee × HS-6 pairs with HHI (0-1
+      fractional scale — ×10,000 for the conventional DOJ/FTC scale) and single-
+      source/single-country flags.
+
+    **Column substitutions from the ideal spec** (none existed in the real schema as
+    originally assumed): `actual_arrival_date` → `trade_update_date` (CBP's last
+    record-update date, not literal vessel arrival — no true arrival-date column
+    exists anywhere in the pipeline). `harmonized_value_usd` → `harmonized_value`
+    (no unit suffix on the source column; no separate currency column exists, USD
+    assumed per CBP filing convention). `harmonized_weight_kg` → `harmonized_weight`
+    + `harmonized_weight_unit`, with Pounds explicitly converted to kg (×0.453592)
+    rather than assumed; unit is NULL (unconfirmed) for 6,585 of 40,592
+    weight-populated rows. `general_rate_text` → reused `bronze_hts.ad_valorem_rate`
+    (already parsed to a 0-1 fraction in Phase 2) rather than re-parsing text.
+    `is_forwarder` → not present on the Silver golden tables (dropped during
+    cluster-grain aggregation); re-derived in `dim_supplier`/`dim_consignee` via the
+    existing `is_freight_forwarder()` macro on `canonical_name`. `teu` → no
+    substitute exists anywhere in Bronze/Silver/raw ingest; omitted entirely.
+    `piece_count` needed no substitution.
+
+    **Data-quality findings surfaced during the build:**
+    - `shipment_value_usd` / `weight_kg` are NULL for 48,608 of 89,200 rows (54.5%
+      — the MAJORITY of the scoped population, not a minority edge case), so
+      `estimated_landed_cost_usd` is NULL for the same rows.
+    - `hs_code_unified` is not uniformly 6-digit-clean: `regex_from_text` rows kept
+      a literal dot (e.g. `'8432.90'`) and `source_field` rows carried raw CBP
+      manifest precision (6/7/8/9/10 digits). Joining `fact_shipments` to
+      `dim_hs_code` on the raw value produced 12,808 spurious mismatches (14.4%);
+      stripping dots and truncating to 6 digits (`left(replace(x,'.',''), 6)`)
+      dropped that to a genuine residual of **4,411 mismatches (4.9%)**: 3,264 are
+      `llm_classified_hs4` rows hs4-padded with `'00'` (classifier only reached HS4
+      confidence — not a real HS6 code), the rest (1,147) are LLM/regex/manifest
+      artifacts predating Phase 6. The `fact_shipments → dim_hs_code` and
+      `mart_concentration_metrics → dim_hs_code` (1,992 of 27,041 rows, 7.4%)
+      relationship tests are set to `severity: warn` for this reason, documented in
+      `gold/schema.yml`.
+
+      Two dbt relationship tests (`fact_shipments.hs_6 → dim_hs_code.hs_6`,
+      `mart_concentration_metrics.hs_6 → dim_hs_code.hs_6`) are set to `severity:
+      warn` rather than hard-fail. The 4.9% mismatch rate reflects Phase 5's
+      classifier confidence limitation (HS-6 accuracy 16.7% on the eval seed) —
+      some LLM-predicted HS-6 codes don't map to an existing `dim_hs_code` row.
+      Downstream consumers can filter to high-confidence HS sources when needed.
+    - `mart_concentration_metrics.is_single_source = TRUE` for 25,173 of 27,041
+      pairs (93%), but 24,787 of those (91.7%) are single-supplier *by
+      construction* (`supplier_count = 1`) — most consignees simply buy a given
+      HS-6 product from only one supplier. The informative concentration signal is
+      in the 2,254 pairs (8.3%) with 2+ suppliers, where avg/median HHI is ~0.51.
+      Any demo/dashboard framing of "single-source risk" should filter on
+      `supplier_count > 1` rather than lead with the raw 93% figure.
+
+      HHI computed on shipment-count basis (not weight) because ~60% of BoL rows
+      have NULL weight in the NIST FEIII 2019 sample. Count-based HHI measures
+      concentration of shipment events per (consignee, HS-6) — a well-defined and
+      interpretable metric. Weight-based HHI would be biased by whichever
+      suppliers happened to report weight.
+    - Section 232 steel+aluminum exposure query returns only HS chapter 73 (steel);
+      the scoped population has zero shipments in chapters 72 or 76 (Phase 3 never
+      scoped those chapters in) — correct behavior, not a bug.
+
+    Total dbt tests: **67** (up from 32 at end of Phase 5) — 65 pass, 2 warn (both
+    the documented `hs_6` gaps above), 0 errors.
+
+    Semantic layer: native Snowflake `SEMANTIC VIEW` published at
+    `LADINGLENS_DB.SEMANTIC.LADINGLENS_SEMANTIC_VIEW` (`scripts/publish_semantic_view.sql`).
+    Exposes 7 tables, 23 dimensions, 7 metrics, with FK relationships driving
+    automatic joins. Two real DDL gaps were found and fixed while building the
+    10-question smoke test: no `dim_date` dimension was exposed at all (despite the
+    table/relationship being wired in — no way to ask a time-trend question without
+    it) and `dim_hs_code.hs_6` itself was only a join key/primary key, never its own
+    `DIMENSIONS` entry, which broke any query pairing it with
+    `mart_concentration_metrics` dimensions. Also discovered a real platform
+    constraint, not a modeling bug: Snowflake's semantic view engine refuses to
+    implicitly join two fact-grain tables (`fact_shipments` and
+    `mart_concentration_metrics`) through a shared dimension table — "entities ...
+    are not related" — even though both relate to `dim_consignee`/`dim_hs_code`. A
+    query needing measures from both must either define a direct relationship
+    between them or do the cross-fact filtering in outer SQL (worked around this
+    way for the smoke test's Q10).
+
+    **Production upgrade path:** Cortex Analyst is not available on this account
+    tier (`SNOWFLAKE.CORTEX.ANALYST` module not installed, confirmed via `SHOW
+    SEMANTIC VIEWS`/query-history checks finding no prior publish attempt). The
+    `SEMANTIC VIEW` itself carries the business logic (measures, dimensions,
+    synonyms); a Cortex Analyst REST endpoint would sit on top of the same object
+    to add LLM-driven NL-to-SQL if the account is upgraded. Phase 9 (Streamlit)
+    queries the `SEMANTIC VIEW` directly via `SEMANTIC_VIEW(...)` SQL syntax,
+    delivering equivalent business-user value without the trial-tier restriction.
+
+    10-question smoke test (`scripts/06_semantic_view_smoke_test.sql`): **10 of 10**
+    returned plausible results (after the two DDL fixes and one query rewrite above).
+    Latency: 0.17s-4.44s per query (the 4.44s outlier was the first query after a
+    republish, likely warehouse resume; everything after ran under 1.3s). Notable
+    smoke-test findings: 3 of the top-10 consignees by landed cost are freight
+    forwarders acting as consignee-of-record (known Phase 4 artifact, not new);
+    Section 232 country list correctly excludes Mexico (the one scoped-origin
+    country with a quota exemption); the 2018 monthly trend correctly truncates at
+    May (matches `trade_update_date`'s known max of 2018-05-28).

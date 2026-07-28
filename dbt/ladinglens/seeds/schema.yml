@@ -32,3 +32,35 @@ seeds:
         tests: [not_null]
       - name: notes
         description: "Reason for ambiguous cases or classification rationale."
+
+  - name: tariff_events
+    description: >
+      12 hand-curated historical Section 232 (steel/aluminum) and Section 301
+      (China) tariff actions, 2018-03-23 through 2025-03-12, cited to USTR.
+      Captures the time-varying tariff history that dim_hs_code /
+      dim_country's current-regime flags cannot represent on their own (e.g.
+      the EU's 2022-2025 Section 232 exemption). Not currently joined into
+      fact_shipments's effective_duty_rate_pct calculation, which reflects
+      only the current (Q3 2026) regime -- time-conditional exposure against
+      this table is deferred to Phase 8's scenario simulator.
+    columns:
+      - name: event_date
+        description: "Effective date of the tariff action."
+        tests: [not_null]
+      - name: event_type
+        description: "'section_232' or 'section_301'."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['section_232', 'section_301']
+      - name: hs_scope
+        description: "Semicolon-delimited HS-2 chapters affected, or 'VARIOUS'/'ALL' for broad actions."
+      - name: country_scope
+        description: "Semicolon-delimited country codes affected, or 'ALL'/'ALL_EXCLUDING_SELECTED' for broad actions."
+      - name: rate_change_pp
+        description: "Rate change in percentage points introduced by this event."
+        tests: [not_null]
+      - name: description
+        description: "Human-readable summary of the action."
+      - name: source_url
+        description: "Citation (USTR)."

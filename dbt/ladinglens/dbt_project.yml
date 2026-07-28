@@ -57,3 +57,12 @@ seeds:
         predicted_chapter: varchar
         correct_hs_6: varchar
         notes: varchar
+    tariff_events:
+      +column_types:
+        event_date: date
+        event_type: varchar
+        hs_scope: varchar
+        country_scope: varchar
+        rate_change_pp: float
+        description: varchar
+        source_url: varchar

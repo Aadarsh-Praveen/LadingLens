@@ -1,0 +1,155 @@
+version: 2
+
+models:
+  - name: dim_country
+    description: >
+      Inline reference dim (~44 rows), hand-curated -- not sourced from any
+      ingested table. Only 8 countries actually appear in
+      silver_bol_shipments_scoped (BE, CN, DE, ES, FR, GB, MX, VN); the rest
+      are context for the semantic layer. is_section_232_target /
+      is_section_301_target reflect the CURRENT (Q3 2026) regime only.
+    columns:
+      - name: country_code
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_hs_code
+    description: >
+      HS-6 grain, aggregated up from bronze_hts's HS8/HS10 line items (6,630
+      distinct HS-6 codes -- no row in bronze_hts is itself at exactly HS-6
+      precision). general_duty_rate_pct is NULL for 1,353 codes where every
+      sub-heading had an unparseable specific/compound rate (e.g. '1.5c/kg').
+      section_232_rate_pct / section_301_rate_pct are hard-coded per HS-2
+      chapter, reflecting the CURRENT (Q3 2026) regime -- not time-varying;
+      see fact_tariff_events for the historical record.
+    columns:
+      - name: hs_6
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_supplier
+    description: >
+      One row per golden_supplier_id from silver_supplier_golden.
+      is_forwarder is re-derived here via the is_freight_forwarder() macro on
+      canonical_name (not present on the Silver golden table -- see model
+      header).
+    columns:
+      - name: supplier_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_consignee
+    description: One row per golden_consignee_id from silver_consignee_golden. See dim_supplier for the is_forwarder note.
+    columns:
+      - name: consignee_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_date
+    description: Standard date spine, 2013-01-01 through 2026-12-31 (5,113 days). Lower bound set below silver_bol_shipments_scoped's earliest trade_update_date (2014-06-18) with margin.
+    columns:
+      - name: date_key
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_tariff_events
+    description: >
+      12 hand-curated Section 232/301 tariff events, 2018-2025 (see
+      seeds/schema.yml for the tariff_events seed this passes through). NOT
+      currently joined into fact_shipments.effective_duty_rate_pct, which
+      reflects only the current regime -- time-conditional exposure is
+      deferred to Phase 8's scenario simulator.
+    columns:
+      - name: date_key
+        description: Event effective date (aliased from the seed's event_date column).
+        tests:
+          - not_null
+      - name: rate_change_pp
+        tests:
+          - not_null
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: ['section_232', 'section_301', 'other']
+
+  - name: fact_shipments
+    description: >
+      Grain: one row per silver_bol_shipments_scoped shipment (89,200 rows).
+      shipment_value_usd / weight_kg are NULL for 48,608 rows (54.5%, the
+      majority) so estimated_landed_cost_usd is NULL for the same rows.
+      effective_duty_rate_pct / estimated_landed_cost_usd reflect the CURRENT
+      (Q3 2026) tariff regime only, not date-conditioned per shipment -- see
+      model header. hs_6 fails to resolve against dim_hs_code for 4,411 rows
+      (4.9%): 3,264 are hs4-padded classifier output (confidence limited to
+      HS4), the remainder are LLM/regex/manifest artifacts predating Phase 6.
+      That relationship test is set to warn, not error, for this reason.
+    columns:
+      - name: shipment_key
+        tests:
+          - unique
+          - not_null
+      - name: supplier_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_supplier')
+              field: supplier_key
+      - name: consignee_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_consignee')
+              field: consignee_key
+      - name: hs_6
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_hs_code')
+              field: hs_6
+              config:
+                severity: warn
+      - name: origin_country_code
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_country')
+              field: country_code
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: mart_concentration_metrics
+    description: >
+      Pre-computed HHI on a 0-1 fractional scale (share squared -- multiply
+      by 10,000 for the conventional DOJ/FTC economist scale). Pivoted to
+      shipment-count-based shares rather than weight-based, since weight_kg
+      is NULL for the majority of fact_shipments (see model header).
+      27,041 consignee x HS-6 pairs. is_single_source is trivially TRUE for
+      24,787 of them (91.7%) because those pairs have exactly one supplier by
+      construction -- the meaningful concentration signal is in the 2,254
+      pairs (8.3%) with 2+ suppliers (avg HHI ~0.51 there). Same hs_6 ->
+      dim_hs_code gap as fact_shipments applies here (1,992 rows, 7.4%),
+      hence the same warn-severity relationship test.
+    columns:
+      - name: consignee_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_consignee')
+              field: consignee_key
+      - name: hs_6
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_hs_code')
+              field: hs_6
+              config:
+                severity: warn

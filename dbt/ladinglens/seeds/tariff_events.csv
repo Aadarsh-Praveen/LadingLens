@@ -1,0 +1,13 @@
+event_date,event_type,hs_scope,country_scope,rate_change_pp,description,source_url
+2018-03-23,section_232,72;73,ALL_EXCLUDING_SELECTED,25.0,"Section 232 steel tariffs imposed at 25%",https://ustr.gov/
+2018-03-23,section_232,76,ALL_EXCLUDING_SELECTED,10.0,"Section 232 aluminum tariffs at 10%",https://ustr.gov/
+2018-07-06,section_301,84;85,CN,25.0,"Section 301 List 1 tariffs on ~$34B China imports",https://ustr.gov/
+2018-08-23,section_301,VARIOUS,CN,25.0,"Section 301 List 2 tariffs on ~$16B China imports",https://ustr.gov/
+2018-09-24,section_301,VARIOUS,CN,10.0,"Section 301 List 3 tariffs at 10% (later raised to 25%)",https://ustr.gov/
+2019-05-10,section_301,VARIOUS,CN,25.0,"Section 301 List 3 tariffs raised from 10% to 25%",https://ustr.gov/
+2019-09-01,section_301,61;62,CN,15.0,"Section 301 List 4A tariffs at 15% on apparel",https://ustr.gov/
+2020-01-15,section_301,61;62,CN,7.5,"List 4A reduced to 7.5% under Phase One deal",https://ustr.gov/
+2022-03-25,section_232,72;73;76,EU,0.0,"Section 232 replaced with tariff-rate quotas for EU steel/aluminum",https://ustr.gov/
+2024-05-14,section_301,87;85,CN,100.0,"May 2024 Section 301 increases on EVs (100%) + semiconductors (50%)",https://ustr.gov/
+2025-02-04,section_232,ALL,CN;MX;CA,10.0,"February 2025 additional 10% on China/Mexico/Canada",https://ustr.gov/
+2025-03-12,section_232,72;73;76,ALL,25.0,"March 2025 Section 232 reinstated at 25% globally",https://ustr.gov/
