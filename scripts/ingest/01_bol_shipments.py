@@ -8,7 +8,6 @@ to a regular table if the trial account lacks EXTERNAL VOLUME privileges.
 Idempotent: CREATE OR REPLACE TABLE wipes and reloads on every run.
 """
 
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

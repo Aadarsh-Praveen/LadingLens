@@ -7,7 +7,6 @@ Idempotent: CREATE OR REPLACE TABLE on every run.
 
 import csv
 import json
-import os
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path

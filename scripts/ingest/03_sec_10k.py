@@ -26,7 +26,6 @@ Phase 4 additions:
 Idempotent: MERGE upsert on (cik, filing_date).
 """
 
-import os
 import re
 import sys
 from datetime import datetime, timezone
