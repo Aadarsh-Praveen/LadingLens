@@ -64,7 +64,11 @@ def flatten(records):
                 "hts_number": hts_number,
                 "description": r.get("description"),
                 "indent": r.get("indent"),
-                "units": ",".join(r.get("units") or []) if isinstance(r.get("units"), list) else r.get("units"),
+                "units": (
+                    ",".join(r.get("units") or [])
+                    if isinstance(r.get("units"), list)
+                    else r.get("units")
+                ),
                 "general_rate_text": r.get("general"),
                 "special_rate_text": r.get("special"),
                 "column2_rate_text": r.get("other"),

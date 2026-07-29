@@ -39,7 +39,8 @@ def render():
         color_continuous_scale=["#38A169", "#D69E2E", "#C53030"],  # green -> yellow -> red
         aspect="auto",
         labels={"x": "HS Chapter", "y": "Consignee", "color": "HHI"},
-        zmin=0, zmax=1,
+        zmin=0,
+        zmax=1,
     )
     fig.update_layout(height=700, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
@@ -48,7 +49,8 @@ def render():
     col1, col2 = st.columns(2)
     selected_consignee = col1.selectbox("Consignee", pivot_df.index.tolist())
     selected_chapter = col2.selectbox(
-        "HS Chapter", chapter_order,
+        "HS Chapter",
+        chapter_order,
         format_func=lambda x: f"{x} - {HS_CHAPTER_LABELS[x]}",
     )
 

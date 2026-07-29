@@ -14,12 +14,14 @@ st.markdown(
     "Built on Snowflake Cortex + dbt medallion pipeline over 89,200 shipments."
 )
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "Executive Overview",
-    "Concentration Heatmap",
-    "Scenario Simulator",
-    "Ask LadingLens",
-])
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "Executive Overview",
+        "Concentration Heatmap",
+        "Scenario Simulator",
+        "Ask LadingLens",
+    ]
+)
 
 with tab1:
     executive.render()

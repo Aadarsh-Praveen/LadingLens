@@ -228,9 +228,13 @@ def main():
         total = post_load_verify(cur)
 
         rejected_pct = errors_seen / EXPECTED_ROWS if EXPECTED_ROWS else 0
-        print(f"\nRows rejected by COPY INTO: {errors_seen:,} ({rejected_pct:.2%} of expected total)")
+        print(
+            f"\nRows rejected by COPY INTO: {errors_seen:,} ({rejected_pct:.2%} of expected total)"
+        )
         if rejected_pct > 0.01:
-            print("WARNING: rejected-row rate exceeds 1% — investigate error messages above before trusting this load.")
+            print(
+                "WARNING: rejected-row rate exceeds 1% — investigate error messages above before trusting this load."
+            )
         if error_messages:
             print("Distinct error messages seen:")
             for msg in error_messages:

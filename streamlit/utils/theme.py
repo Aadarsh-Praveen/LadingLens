@@ -1,11 +1,11 @@
 """Color palette and styling constants shared across all panels."""
 
 # Color palette -- muted, professional, colorblind-safe
-PRIMARY = "#2C5282"        # Deep blue
-ACCENT = "#DD6B20"         # Warm orange for callouts
-SUCCESS = "#38A169"        # Diversified/low-risk
-WARNING = "#D69E2E"        # Moderate concentration
-DANGER = "#C53030"         # High concentration/single-source
+PRIMARY = "#2C5282"  # Deep blue
+ACCENT = "#DD6B20"  # Warm orange for callouts
+SUCCESS = "#38A169"  # Diversified/low-risk
+WARNING = "#D69E2E"  # Moderate concentration
+DANGER = "#C53030"  # High concentration/single-source
 NEUTRAL_LIGHT = "#F7FAFC"
 NEUTRAL_DARK = "#2D3748"
 

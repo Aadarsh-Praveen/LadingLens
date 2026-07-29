@@ -32,13 +32,21 @@ QUESTIONS = [
     ("Q6", "What's my total tariff exposure across all steel imports from Germany?"),
     ("Q7", "For Caterpillar, what happens if Chinese electronics tariffs rise 25 pp?"),
     ("Q8", "How diversified is Nike's supplier base for apparel?"),
-    ("Q9", "What does Caterpillar disclose about supply chain risks and how does that compare to their current supplier concentration?"),
-    ("Q10", "Show me consignees single-sourced for HS chapter 87 and what their 10-Ks say about supplier concentration."),
+    (
+        "Q9",
+        "What does Caterpillar disclose about supply chain risks and how does that compare to their current supplier concentration?",
+    ),
+    (
+        "Q10",
+        "Show me consignees single-sourced for HS chapter 87 and what their 10-Ks say about supplier concentration.",
+    ),
 ]
 
 
 def run_question(cur, question):
-    payload = json.dumps({"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]})
+    payload = json.dumps(
+        {"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]}
+    )
     t0 = time.time()
     cur.execute("SELECT SNOWFLAKE.CORTEX.DATA_AGENT_RUN(%s, %s)", (AGENT, payload))
     raw = cur.fetchall()[0][0]
@@ -49,12 +57,17 @@ def run_question(cur, question):
     for block in data.get("content", []):
         t = block.get("type")
         if t == "tool_use" and block["tool_use"].get("name") not in (
-            None, "system_execute_sql", "system_agentic_semantic_context",
+            None,
+            "system_execute_sql",
+            "system_agentic_semantic_context",
         ):
             tools_used.append(block["tool_use"]["name"])
         elif t == "tool_result" and block["tool_result"].get("status") == "error":
             tool_errors.append(
-                (block["tool_result"].get("name"), json.dumps(block["tool_result"].get("content"))[:200])
+                (
+                    block["tool_result"].get("name"),
+                    json.dumps(block["tool_result"].get("content"))[:200],
+                )
             )
         elif t == "text":
             text_parts.append(block["text"])

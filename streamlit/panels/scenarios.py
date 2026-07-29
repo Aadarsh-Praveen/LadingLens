@@ -30,16 +30,17 @@ def render():
     col1, col2 = st.columns([1, 2])
     with col1:
         consignees = get_consignee_options(limit=50)
-        selected_consignee = st.selectbox(
-            "Consignee", consignees["CONSIGNEE_NAME"].tolist()
-        )
-        selected_consignee_key = consignees[
-            consignees["CONSIGNEE_NAME"] == selected_consignee
-        ]["CONSIGNEE_KEY"].iloc[0]
+        selected_consignee = st.selectbox("Consignee", consignees["CONSIGNEE_NAME"].tolist())
+        selected_consignee_key = consignees[consignees["CONSIGNEE_NAME"] == selected_consignee][
+            "CONSIGNEE_KEY"
+        ].iloc[0]
 
         additional_rate = st.slider(
             "Additional tariff rate (percentage points)",
-            min_value=0.0, max_value=100.0, value=25.0, step=5.0,
+            min_value=0.0,
+            max_value=100.0,
+            value=25.0,
+            step=5.0,
         )
 
         hs_chapters = st.multiselect(

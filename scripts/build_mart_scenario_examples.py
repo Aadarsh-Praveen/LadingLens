@@ -19,11 +19,30 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ingest"))
 from _snowflake_conn import connect  # noqa: E402
 
 SCENARIOS = [
-    ("S232 doubles globally", {"additional_rate_pp": 25.0, "hs_chapters": ["72", "73", "76"], "origin_countries": []}),
-    ("S232 EU auto", {"additional_rate_pp": 25.0, "hs_chapters": ["87"], "origin_countries": ["DE", "BE", "FR", "IT", "GB", "ES"]}),
-    ("S301 China electronics", {"additional_rate_pp": 25.0, "hs_chapters": ["84", "85"], "origin_countries": ["CN"]}),
-    ("Mexico +10pp all chapters", {"additional_rate_pp": 10.0, "hs_chapters": [], "origin_countries": ["MX"]}),
-    ("Vietnam apparel +15pp", {"additional_rate_pp": 15.0, "hs_chapters": ["61", "62"], "origin_countries": ["VN"]}),
+    (
+        "S232 doubles globally",
+        {"additional_rate_pp": 25.0, "hs_chapters": ["72", "73", "76"], "origin_countries": []},
+    ),
+    (
+        "S232 EU auto",
+        {
+            "additional_rate_pp": 25.0,
+            "hs_chapters": ["87"],
+            "origin_countries": ["DE", "BE", "FR", "IT", "GB", "ES"],
+        },
+    ),
+    (
+        "S301 China electronics",
+        {"additional_rate_pp": 25.0, "hs_chapters": ["84", "85"], "origin_countries": ["CN"]},
+    ),
+    (
+        "Mexico +10pp all chapters",
+        {"additional_rate_pp": 10.0, "hs_chapters": [], "origin_countries": ["MX"]},
+    ),
+    (
+        "Vietnam apparel +15pp",
+        {"additional_rate_pp": 15.0, "hs_chapters": ["61", "62"], "origin_countries": ["VN"]},
+    ),
 ]
 
 TABLE = "LADINGLENS_DB.GOLD.MART_SCENARIO_EXAMPLES"
@@ -33,7 +52,8 @@ def main():
     conn = connect()
     cur = conn.cursor()
 
-    cur.execute(f"""
+    cur.execute(
+        f"""
         CREATE OR REPLACE TABLE {TABLE} (
             consignee_key STRING,
             consignee_name STRING,
@@ -49,14 +69,17 @@ def main():
             delta_usd FLOAT,
             delta_pct FLOAT
         )
-    """)
+    """
+    )
 
-    cur.execute("""
+    cur.execute(
+        """
         SELECT consignee_key, consignee_name
         FROM LADINGLENS_DB.GOLD.DIM_CONSIGNEE
         ORDER BY total_shipments DESC
         LIMIT 20
-    """)
+    """
+    )
     consignees = cur.fetchall()
 
     all_rows = []
@@ -65,26 +88,49 @@ def main():
         for scenario_name, scenario_dict in SCENARIOS:
             n_calls += 1
             scenario_json = json.dumps(scenario_dict).replace("'", "''")
-            cur.execute(f"""
+            cur.execute(
+                f"""
                 CALL LADINGLENS_DB.SEMANTIC.SIMULATE_TARIFF_SCENARIO(
                     '{consignee_key}',
                     PARSE_JSON('{scenario_json}')
                 )
-            """)
+            """
+            )
             for r in cur.fetchall():
-                (hs_chapter, origin_country, total_shipments,
-                 baseline_rate, scenario_rate, baseline_value,
-                 baseline_landed, scenario_landed, delta_usd, delta_pct) = r
+                (
+                    hs_chapter,
+                    origin_country,
+                    total_shipments,
+                    baseline_rate,
+                    scenario_rate,
+                    baseline_value,
+                    baseline_landed,
+                    scenario_landed,
+                    delta_usd,
+                    delta_pct,
+                ) = r
                 if delta_usd is None or delta_usd <= 0:
                     continue  # only rows where the scenario actually changed cost
-                all_rows.append((
-                    consignee_key, consignee_name, scenario_name,
-                    hs_chapter, origin_country, total_shipments,
-                    baseline_rate, scenario_rate,
-                    baseline_value, baseline_landed, scenario_landed,
-                    delta_usd, delta_pct,
-                ))
-        print(f"  {consignee_name}: {n_calls}/{len(consignees) * len(SCENARIOS)} calls done, {len(all_rows)} rows so far")
+                all_rows.append(
+                    (
+                        consignee_key,
+                        consignee_name,
+                        scenario_name,
+                        hs_chapter,
+                        origin_country,
+                        total_shipments,
+                        baseline_rate,
+                        scenario_rate,
+                        baseline_value,
+                        baseline_landed,
+                        scenario_landed,
+                        delta_usd,
+                        delta_pct,
+                    )
+                )
+        print(
+            f"  {consignee_name}: {n_calls}/{len(consignees) * len(SCENARIOS)} calls done, {len(all_rows)} rows so far"
+        )
 
     print(f"Total CALL invocations: {n_calls}")
     print(f"Total rows to insert: {len(all_rows)}")

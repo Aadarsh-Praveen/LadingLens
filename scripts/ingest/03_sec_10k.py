@@ -98,14 +98,13 @@ def apply_runaway_guard(text):
         cut_positions.append(item8_match.start())
     return text[: min(cut_positions)].strip()
 
+
 # 20-F section markers (foreign private issuers). Item 3.D = risk factors,
 # the 20-F equivalent of 10-K Item 1A. Item 5 = Operating and Financial
 # Review and Prospects, the 20-F equivalent of 10-K Item 7 (MD&A).
 ITEM_3D_START = re.compile(r"item\s*3\.?\s*d\.?\s*risk\s*factors", re.IGNORECASE)
 ITEM_4_END = re.compile(r"item\s*4\.?\s*information\s*on\s*the\s*company", re.IGNORECASE)
-ITEM_5_START = re.compile(
-    r"item\s*5\.?\s*operating\s*and\s*financial\s*review", re.IGNORECASE
-)
+ITEM_5_START = re.compile(r"item\s*5\.?\s*operating\s*and\s*financial\s*review", re.IGNORECASE)
 ITEM_6_END = re.compile(r"item\s*6\.?\s*directors", re.IGNORECASE)
 
 SECTION_MARKERS = {
@@ -118,10 +117,10 @@ SECTION_MARKERS = {
                 ITEM_2_LINE_START,
                 ITEM_2_PROPERTIES,
                 ITEM_7_START,  # last-resort backstop: several filers' Item 1B/2
-                                # headings didn't match any pattern above, letting
-                                # extraction run through Item 7A market-risk tables
-                                # and financial-statement notes before the runaway
-                                # guard's audit-firm check finally caught it.
+                # headings didn't match any pattern above, letting
+                # extraction run through Item 7A market-risk tables
+                # and financial-statement notes before the runaway
+                # guard's audit-firm check finally caught it.
             ],
         ),
         "secondary": (ITEM_7_START, [ITEM_7A_END, ITEM_8_END]),
@@ -353,7 +352,9 @@ def main():
         loaded = []
         failed = []
         for ticker, cfg in tickers.items():
-            print(f"\n{ticker} (cik={cfg['cik'] or 'lookup-by-ticker'}, filing_type={cfg['filing_type']}):")
+            print(
+                f"\n{ticker} (cik={cfg['cik'] or 'lookup-by-ticker'}, filing_type={cfg['filing_type']}):"
+            )
             filing = download_and_parse(ticker, cfg["cik"], cfg["filing_type"])
             if filing is None:
                 failed.append((ticker, "download or file-location failure"))
@@ -377,7 +378,12 @@ def main():
                     f"item_7_length={filing['item_7_length']} "
                     f"(best={best_length}) < {MIN_ITEM_1A_CHARS} — likely failed extraction, skipping"
                 )
-                failed.append((ticker, f"item_1a_length={filing['item_1a_length']}, item_7_length={filing['item_7_length']}"))
+                failed.append(
+                    (
+                        ticker,
+                        f"item_1a_length={filing['item_1a_length']}, item_7_length={filing['item_7_length']}",
+                    )
+                )
                 continue
 
             load_filing(cur, filing)
@@ -397,7 +403,9 @@ def main():
 
         print(f"\n{'=' * 60}")
         print(f"Loaded {len(loaded)}/{len(tickers)} tickers this run.")
-        print(f"Table {TABLE}: {total} total rows, {good} with item_1a_length >= {MIN_ITEM_1A_CHARS}")
+        print(
+            f"Table {TABLE}: {total} total rows, {good} with item_1a_length >= {MIN_ITEM_1A_CHARS}"
+        )
         if failed:
             print(f"\nFailed/skipped tickers ({len(failed)}):")
             for ticker, reason in failed:

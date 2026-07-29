@@ -117,9 +117,11 @@ def render():
 
         response = _run_with_progress(user_question)
 
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response["final_answer"],
-            "tool_trace": response.get("tool_calls", []),
-        })
+        st.session_state.chat_history.append(
+            {
+                "role": "assistant",
+                "content": response["final_answer"],
+                "tool_trace": response.get("tool_calls", []),
+            }
+        )
         st.rerun()

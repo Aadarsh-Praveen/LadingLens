@@ -33,7 +33,8 @@ def render():
         df = get_origin_country_breakdown()
         fig = px.bar(
             df.sort_values("SHIPMENTS", ascending=False),
-            x="COUNTRY", y="SHIPMENTS",
+            x="COUNTRY",
+            y="SHIPMENTS",
             color_discrete_sequence=[PRIMARY],
             labels={"COUNTRY": "Origin country", "SHIPMENTS": "Shipments"},
         )
@@ -43,7 +44,9 @@ def render():
         df = get_hs_chapter_breakdown()
         df["chapter_label"] = df["HS_2"].map(HS_CHAPTER_LABELS)
         fig = px.pie(
-            df, names="chapter_label", values="SHIPMENTS",
+            df,
+            names="chapter_label",
+            values="SHIPMENTS",
             color_discrete_sequence=px.colors.sequential.Blues_r,
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -51,8 +54,11 @@ def render():
     st.markdown("### Top 10 Consignees by Landed Cost")
     df = get_top_consignees_by_landed_cost(10)
     fig = px.bar(
-        df, x="TOTAL_LANDED_COST", y="CONSIGNEE_NAME",
-        orientation="h", color_discrete_sequence=[ACCENT],
+        df,
+        x="TOTAL_LANDED_COST",
+        y="CONSIGNEE_NAME",
+        orientation="h",
+        color_discrete_sequence=[ACCENT],
         labels={"TOTAL_LANDED_COST": "Total landed cost (USD)", "CONSIGNEE_NAME": ""},
     )
     fig.update_layout(yaxis=dict(autorange="reversed"))
