@@ -1,0 +1,37 @@
+version: 2
+
+# Tables in the GOLD schema that are populated by an external Python driver,
+# not a dbt model -- stored procedures (SIMULATE_TARIFF_SCENARIO) can't be
+# invoked per-row from a SELECT's FROM clause the way a UDTF can, so
+# mart_scenario_examples is built by scripts/build_mart_scenario_examples.py
+# and only referenced here (as a source, for testing), never dbt-materialized.
+
+sources:
+  - name: gold_external
+    database: LADINGLENS_DB
+    schema: GOLD
+    tables:
+      - name: mart_scenario_examples
+        description: >
+          100 CALLs (20 top consignees x 5 canonical scenarios) to
+          SIMULATE_TARIFF_SCENARIO, filtered to delta_usd > 0. 24 rows --
+          well below the original 100-500 target, for two understood
+          reasons: (1) a real arithmetic bug (recomputing landed cost from
+          an averaged rate rather than adding the increment to the true
+          baseline) inflated an earlier build to 98 rows via phantom
+          nonzero deltas on non-matching scenarios; fixed, and the
+          corrected number is 24. (2) Only 3 of the 5 canonical scenarios
+          have any representation in the top-20-by-volume consignee list --
+          S301 China electronics and Vietnam apparel +15pp produced zero
+          matches, since the top 20 by shipment count are dominated by
+          EU-auto-adjacent freight forwarders, combined with the known
+          54.5% shipment_value_usd NULL rate (see Phase 6 wrap).
+        columns:
+          - name: consignee_key
+            tests: [not_null]
+          - name: scenario_name
+            tests: [not_null]
+          - name: hs_chapter
+            tests: [not_null]
+          - name: origin_country
+            tests: [not_null]

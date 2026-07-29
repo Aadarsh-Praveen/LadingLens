@@ -1,0 +1,119 @@
+# LadingLens Cortex Agent specification body.
+#
+# This is the exact YAML embedded inline in scripts/publish_agent.sql's
+# `FROM SPECIFICATION $$ ... $$` clause (Snowflake CREATE AGENT does not
+# support loading a spec from a staged file -- confirmed empirically during
+# Phase 8; the spec must be inline). Kept here as a separate, readable file
+# for version control; scripts/publish_agent.sql is the actual source of
+# truth that gets executed -- keep the two in sync if either changes.
+#
+# Verified structure -- diverges from the original Phase 8 doc's draft in
+# several ways found only by testing against the real account:
+#   - Tool types are cortex_analyst_text_to_sql / cortex_search / generic,
+#     not cortex_semantic_view / cortex_search / sql_function.
+#   - Tool declarations (tools:) and tool configuration (tool_resources:)
+#     are separate top-level sections, not a single flat list.
+#   - cortex_analyst_text_to_sql requires an execution_environment.warehouse
+#     in tool_resources or every invocation fails with "missing an execution
+#     environment" -- not mentioned in any doc excerpt found.
+#   - cortex_search's tool_resources key for the service is `name`, not
+#     `search_service`.
+#   - generic tools calling a stored procedure have TWO confirmed
+#     incompatibilities, neither documented at the time of writing:
+#       1. An object/VARIANT-typed parameter is rejected outright.
+#       2. A RETURNS TABLE procedure fails invocation with an opaque
+#          "HTTP 400 Bad Request" regardless of parameter types --
+#          isolated by testing an otherwise-identical RETURNS STRING
+#          procedure, which invoked successfully.
+#     SIMULATE_TARIFF_SCENARIO_AGENT (scalar params, RETURNS STRING,
+#     JSON-serialized result) works around both; the original
+#     SIMULATE_TARIFF_SCENARIO (VARIANT param, RETURNS TABLE) is
+#     unchanged and still used directly for mart_scenario_examples.
+
+instructions:
+  response: >
+    Answer concisely, citing exact numbers from tool outputs. Do not
+    extrapolate beyond what tools return. When quoting 10-K excerpts,
+    include the ticker and filing year.
+  orchestration: >
+    Use query_shipments for aggregate, concentration, and filtering
+    questions over shipment/supplier/consignee/tariff data. Use
+    retrieve_10k_risk_factors when the user asks what a company discloses
+    or says about a risk topic; filter by ticker if the user names a
+    company. For tariff what-if scenarios, first identify the
+    consignee_key via query_shipments (do not guess it), then call
+    simulate_tariff_scenario with scalar arguments -- hs_chapters and
+    origin_countries are comma-separated strings, empty string means "all".
+    Prefer short answers with exact citations over long generalizations.
+
+tools:
+  - tool_spec:
+      type: "cortex_analyst_text_to_sql"
+      name: "query_shipments"
+      description: >
+        Query structured shipment, supplier, consignee, and tariff data
+        for LadingLens. Use this for aggregation questions, concentration
+        analysis, and filtering by HS chapter, origin country, or
+        consignee.
+
+  - tool_spec:
+      type: "cortex_search"
+      name: "retrieve_10k_risk_factors"
+      description: >
+        Retrieve relevant excerpts from SEC 10-K/20-F risk factor
+        disclosures for a specific company. Use this when the user asks
+        what a company "says about" or "discloses about" a risk topic.
+        Filter by ticker attribute if the user names a specific company.
+
+  - tool_spec:
+      type: "generic"
+      name: "simulate_tariff_scenario"
+      description: >
+        Simulate a what-if tariff scenario for a specific consignee_key
+        (obtain it from query_shipments first -- do not guess it).
+        hs_chapters and origin_countries are comma-separated strings
+        (e.g. "72,73,76"); an empty string means "all". Returns JSON with
+        before/after landed cost broken down by (HS chapter, origin
+        country). Use when the user asks "what happens if [tariff
+        change]" or "how much would [company] pay under [scenario]."
+      input_schema:
+        type: object
+        properties:
+          consignee_key:
+            type: string
+            description: Golden consignee ID from dim_consignee.
+          additional_rate_pp:
+            type: number
+            description: Percentage points to add to the duty rate for matching rows.
+          hs_chapters:
+            type: string
+            description: Comma-separated HS-2 chapters to match, e.g. "72,73,76"; empty string = all chapters.
+          origin_countries:
+            type: string
+            description: Comma-separated origin country codes to match, e.g. "CN"; empty string = all countries.
+          scenario_name:
+            type: string
+            description: Human-readable label for this scenario.
+        required:
+          - consignee_key
+          - additional_rate_pp
+          - hs_chapters
+          - origin_countries
+          - scenario_name
+
+tool_resources:
+  query_shipments:
+    semantic_view: "LADINGLENS_DB.SEMANTIC.LADINGLENS_SEMANTIC_VIEW"
+    execution_environment:
+      warehouse: "LADINGLENS_WH"
+
+  retrieve_10k_risk_factors:
+    name: "LADINGLENS_DB.SEMANTIC.RISK_FACTORS_SEARCH"
+    max_results: 5
+
+  simulate_tariff_scenario:
+    type: "procedure"
+    identifier: "LADINGLENS_DB.SEMANTIC.SIMULATE_TARIFF_SCENARIO_AGENT"
+    execution_environment:
+      type: "warehouse"
+      warehouse: "LADINGLENS_WH"

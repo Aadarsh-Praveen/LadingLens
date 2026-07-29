@@ -627,3 +627,212 @@
     Phase 5 alone tallied 25 cumulative catches (Phase 4+5); Phase 6 and Phase 7
     each documented their own findings in-line above without a single running
     total restated here to avoid inventing a number Phase 6's wrap never gave.
+
+## Phase 8
+
+- **Phase 8 wrap — Cortex Agent + Tariff Scenario Simulator:**
+
+    Built the agent orchestration layer on top of Phase 6/7 primitives. This phase
+    surfaced more previously-undocumented platform behavior than any prior phase --
+    the Cortex Agent product is new enough that several load-bearing details aren't
+    in the docs yet, or weren't findable at the time of writing. Total build time
+    ~2.5 hours, entirely within budget, no timebox needed.
+
+    **Cortex Agent IS available on this account tier -- a real surprise given
+    Phase 6's finding.** Phase 6 found `SNOWFLAKE.CORTEX.ANALYST` (the standalone
+    API) gated on this account. Cortex Agent's `cortex_analyst_text_to_sql` tool
+    type is, under the hood, Cortex Analyst -- and it works fine when invoked
+    through an Agent. This suggests Cortex Analyst's standalone REST/SQL API and
+    its use as an embedded Agent tool are gated independently on this account tier
+    -- a Snowflake product-packaging quirk worth knowing if this comes up again
+    (e.g., don't assume "Analyst is unavailable" rules out Agent-embedded
+    text-to-SQL).
+
+    **Real syntax and behavior found only by testing against the live account,
+    not by reading docs (which were incomplete or wrong on several points):**
+    - `CREATE AGENT` (no "CORTEX" keyword), with the specification passed INLINE
+      via `FROM SPECIFICATION $$ ... $$` -- not loaded from a staged YAML file as
+      the original Phase 8 doc guessed.
+    - Invocation is `SNOWFLAKE.CORTEX.DATA_AGENT_RUN(agent_name, json_string)`,
+      not `AGENT_RUN` as the doc guessed. The JSON payload must be passed as a
+      literal string (quote-escaped), not `PARSE_JSON()`'d -- the function
+      requires its second argument to be a compile-time constant.
+    - The `cortex_analyst_text_to_sql` tool requires an explicit
+      `execution_environment.warehouse` in `tool_resources`, or every invocation
+      fails at runtime with "missing an execution environment." Not mentioned in
+      any documentation found.
+    - The `cortex_search` tool's resource key for the search service is `name`,
+      not `search_service` as the doc's draft used.
+    - The `generic` tool type (used for the tariff scenario simulator) has TWO
+      separate, confirmed incompatibilities, found by isolating each with a
+      minimal repro:
+        1. It rejects an object/VARIANT-typed parameter outright: "generic tool
+           ... uses argument type object which is not supported for execution
+           environment type warehouse." This is the same limitation flagged as a
+           risk during the pre-build doubts review, now confirmed.
+        2. Independently, it cannot invoke a `RETURNS TABLE` procedure AT ALL,
+           regardless of parameter types -- confirmed by testing an otherwise-
+           identical trivial `RETURNS STRING` procedure (worked immediately)
+           against the real procedure with `RETURNS TABLE` (failed every time
+           with an opaque "empty error response body for HTTP status 400 Bad
+           Request", no useful detail).
+
+    **Architectural decision: UDF became a stored procedure, then gained a
+    scalar-return wrapper.** `get_active_session()` failure inside a Python UDTF
+    is not "unreliable in some earlier versions" as the Phase 8 doc's Step 1 note
+    hedged -- it's a hard wall on this account, confirmed by a minimal probe UDTF
+    that failed with `SnowparkSessionException: No default Session is found`.
+    `SIMULATE_TARIFF_SCENARIO` was built as a stored procedure instead (session
+    passed automatically as the first handler argument, no `get_active_session()`
+    needed) and verified correct against Caterpillar. Then, to satisfy the Cortex
+    Agent generic-tool incompatibilities above, a second procedure,
+    `SIMULATE_TARIFF_SCENARIO_AGENT`, was added: scalar parameters
+    (`consignee_key STRING, additional_rate_pp FLOAT, hs_chapters STRING,
+    origin_countries STRING, scenario_name STRING` -- comma-separated strings
+    standing in for the original's array/object fields) and `RETURNS STRING`
+    (JSON-serialized rows) instead of `RETURNS TABLE`. It delegates to the
+    original, unchanged procedure internally via `session.sql("CALL ...")`. The
+    original `SIMULATE_TARIFF_SCENARIO` (VARIANT param, RETURNS TABLE) is
+    untouched and still used directly by `mart_scenario_examples`.
+
+    **A real arithmetic bug was caught and fixed in the scenario procedure
+    itself**, found by noticing four different, non-matching scenarios produce an
+    identical nonzero "phantom" delta for the same (consignee, HS chapter,
+    country) cell -- which should be mathematically impossible if a non-matching
+    scenario truly leaves the rate unchanged. Root cause: `scenario_landed_cost`
+    was recomputed from scratch as `baseline_value * (1 + scenario_rate/100)`,
+    where `scenario_rate` used an `AVG(effective_duty_rate_pct)` across shipments
+    in that (chapter, country) group. Since a single 2-digit HS chapter spans many
+    HS-6 subheadings with materially different actual rates, the averaged rate
+    doesn't reconstruct the true weighted total -- so even a no-op scenario (no
+    match, rate unchanged) produced a nonzero delta purely from the lossy
+    average-vs-weighted-sum mismatch. Fixed by computing
+    `scenario_landed = baseline_landed + (baseline_value * rate_increment / 100)`
+    -- an explicit delta on top of the TRUE baseline (`SUM(estimated_landed_cost_usd)`,
+    which correctly reflects each shipment's own actual rate), not a recomputation
+    via an approximated rate. Verified: non-matching scenarios now show exactly
+    $0.00 delta; the matching scenario's delta corrected from a wrong $715,412 to
+    the true $388,783 for the same test case (Expeditors, HS 73, Germany).
+
+    **mart_scenario_examples: 24 rows** (20 top consignees x 5 canonical
+    scenarios, 100 procedure calls, filtered to `delta_usd > 0`) -- well below the
+    original 100-500 target, understood and documented rather than papered over:
+    the pre-fix build produced 98 rows, almost all inflated by the arithmetic bug
+    above; the corrected number is 24, and only 3 of the 5 canonical scenarios
+    (S232 doubles globally, S232 EU auto, Mexico +10pp) have any representation at
+    all in the top-20-by-shipment-count consignee list -- S301 China electronics
+    and Vietnam apparel +15pp produced zero matches, since the top 20 by volume
+    are dominated by EU-auto-adjacent freight forwarders. Also hit and fixed an
+    edge case: `session.create_dataframe([], schema=[...])` crashes when given
+    plain column-name strings and zero rows ("cannot infer schema from empty
+    data") -- real and expected here, since large consolidator/forwarder
+    consignees frequently have zero shipments with a populated
+    shipment_value_usd. Fixed with an explicit typed `StructType` schema. Built
+    via `scripts/build_mart_scenario_examples.py` (a Python driver, ~4 minutes for
+    100 calls) since stored procedures can't be invoked per-row from a SELECT's
+    FROM clause the way a UDTF can; the table is referenced from dbt as an
+    external source (`_gold_external_sources.yml`), not a `ref()`'d model.
+
+    **Walmart limitation (documented, not fixed):** every consignee in
+    `silver_bol_shipments_scoped`/`dim_consignee` matching "WALMART" or
+    "WAL-MART" tops out at 29 total shipments -- the closest match,
+    "STARPLAST USA LLC (FOR WALMART)," is a third-party packaging vendor
+    shipping on Walmart's behalf, not Walmart's own import operation. Walmart's
+    real US import volume does not appear to be resolvable from this dataset
+    under any name-matching strategy; the underlying BoL data may simply not
+    capture it under a recognizable consignee name. All Walmart-centric smoke-test
+    questions (original Q2, Q4, Q6, Q7) were swapped to Caterpillar (a verified
+    clean, high-confidence match: "CATERPILLAR INC," 276 shipments,
+    `dim_ticker.match_confidence = 'partial'` resolving correctly).
+
+    **Cortex Agent fallback (Step 3.5) -- documented, not built.** Since Cortex
+    Agent works, building the `AI_COMPLETE`-based hand-rolled substitute would
+    have been dead code. Preserved as a design record: if Cortex Agent had been
+    unavailable, the planned substitute was a stored procedure
+    (`ASK_LADINGLENS(question STRING)`) that (1) asks `AI_COMPLETE` to pick one of
+    the three tools given the question, (2) executes the selected tool
+    (`SEMANTIC_VIEW(...)` query, `CORTEX.SEARCH_PREVIEW`, or the scenario
+    procedure), (3) feeds the result back to `AI_COMPLETE` for final synthesis.
+    This remains the fallback path to build if Cortex Agent access ever regresses
+    on this account.
+
+    Smoke test (`scripts/08_agent_smoke_test.sql` + a Python driver, since
+    reliably escaping the JSON payload for `DATA_AGENT_RUN` in raw SQL is
+    impractical): **9 of 10 questions produced strong, factually-grounded
+    answers; 1 partial.** Both fusion queries (Q9, Q10 -- combining structured
+    query + 10-K retrieval) worked well on the first pass, better than the
+    original doc's own expectation that they "may not work perfectly." Notable
+    agent behaviors observed: correctly identified when a scenario had zero
+    matching data (Chinese electronics, HS 85 -- not in this project's HS-chapter
+    scope at all) and explained why instead of fabricating a number; correctly
+    declined to guess stock tickers for foreign automaker subsidiaries (VW Mexico,
+    Nissan Mexicana, Mercedes-Benz, BMW Mexico, GM, Honda, Volvo) rather than
+    misattribute a 10-K excerpt; self-corrected from several internal SQL syntax
+    errors (an invalid identifier, a blocked "arbitrary SQL" attempt) without
+    those errors reaching the final answer. Latency: p50 38.3s, p95 93.2s --
+    meaningfully higher than the original doc's "5-10 seconds" estimate for
+    fusion queries; Phase 9's Streamlit UI needs a real loading state, not a
+    spinner sized for a few seconds.
+
+    Total dbt tests: **85** pass 83 / warn 2 / error 0 (up from 79 at end of
+    Phase 7). New tests: `dim_ticker`-independent source tests on
+    `mart_scenario_examples` (not_null on consignee_key/scenario_name/hs_chapter/
+    origin_country, a row-count sanity bound updated to reflect the real 24-row
+    count) plus a meaningful behavioral assertion replacing the originally-
+    proposed `delta_usd > 0` test (tautological -- the mart's own build query
+    already filters to `delta_usd > 0`, so it could never fail). The replacement
+    asserts real arithmetic on a known-good anchor row (BMW Manufacturing Corp,
+    "S232 doubles globally," HS chapter 73, Germany: `scenario_duty_rate_pct -
+    baseline_duty_rate_pct` must equal exactly 25.0). BMW substitutes for the
+    originally-proposed Caterpillar anchor since CAT isn't in the top-20-by-volume
+    consignee list this mart is built from; CAT's own arithmetic was
+    independently verified via direct procedure call in Step 1.
+
+    Data-quality / platform-behavior catches in Phase 8 (7): (1) stale STATE
+    RECAP details in the doc itself (wrong embedding model name, guessed DDL/
+    invocation syntax that didn't match the real account); (2) `get_active_session()`
+    confirmed hard-broken in UDTFs on this account (not just "unreliable");
+    (3) the scenario procedure's averaged-rate arithmetic bug producing phantom
+    deltas on non-matching scenarios; (4) `create_dataframe`'s empty-data schema
+    crash; (5) Cortex Agent's generic-tool object-type-parameter incompatibility;
+    (6) Cortex Agent's generic-tool RETURNS-TABLE incompatibility; (7) the
+    Walmart data-resolution gap. Phase 4+5+7+8 tallied catches: 25 (Phase 4+5) + 6
+    (Phase 7) + 7 (Phase 8) = 38 -- Phase 6 is NOT included in this figure; its
+    wrap documented real catches (column substitutions, semantic-view DDL syntax
+    fixes, the fact-grain join constraint) but never rolled them into a single
+    discrete count, so folding it into "38" would overstate what that number
+    actually covers. Phase 8 alone found more distinct, previously-undocumented
+    platform-behavior issues than any prior phase -- expected, given Cortex
+    Agent's relative newness on this account.
+
+    **Known open items / future work:**
+    - **Cortex Agent latency** (p95 93s on fusion queries) -- Phase 9's Streamlit
+      UI must show an animated loading state with progress narrative, not a
+      static spinner, or a 90-second wait will read as broken.
+    - **mart_scenario_examples selection strategy** -- top-20-by-shipments
+      produces EU-auto-forwarder-heavy coverage; S301 China electronics and
+      Vietnam apparel scenarios produce zero rows because those consignees
+      aren't in the top 20 by volume. Phase 9's live scenario picker (calling
+      `SIMULATE_TARIFF_SCENARIO` directly for arbitrary consignee x scenario
+      combinations, not limited to the precomputed mart) provides broader
+      coverage than this mart alone.
+    - **`int_hs_classified_raw` dormant schema-drift bug** (surfaced during
+      Phase 8's sanity-check `dbt build` -- the first bare, unscoped build run
+      since Phase 5; every build since, including all of Phase 6-8, used
+      `--select` and never touched this model). Root cause: the physical table
+      has 6 columns (including `predicted_hs_6`, `classification_status`) left
+      over from Phase 5's one-time-run-then-renamed-into-place history, but the
+      current model's SELECT only produces 4, so dbt's incremental merge logic
+      fails with "invalid identifier 'PREDICTED_HS_6'." Unrelated to anything
+      built in Phase 8, not fixed here because touching this model triggers a
+      real ~$20 Cortex re-classification cost per its own header warning.
+      Investigate before Phase 10, or defer as post-submission cleanup.
+
+    What Phase 8 unlocks:
+    - Phase 9 (Streamlit): can now embed the agent as a chat panel alongside the
+      concentration heatmap and tariff dashboard, with a loading state sized for
+      the observed 40-90+ second fusion-query latency.
+    - The full "structured + unstructured + scenario simulation in a single
+      conversational interface" story that defines LadingLens as a product --
+      demonstrated end-to-end via the smoke test's fusion queries (Q9, Q10),
+      which is the single hardest thing this project set out to prove works.
