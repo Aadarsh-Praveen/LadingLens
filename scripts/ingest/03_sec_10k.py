@@ -346,8 +346,7 @@ def main():
     conn = connect()
     cur = conn.cursor()
     try:
-        cur.execute(
-            f"""
+        cur.execute(f"""
             CREATE TABLE IF NOT EXISTS {TABLE} (
                 cik VARCHAR,
                 ticker VARCHAR,
@@ -359,8 +358,7 @@ def main():
                 item_7_length NUMBER,
                 ingested_at TIMESTAMP_NTZ
             )
-            """
-        )
+            """)
         cur.execute(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS filing_type VARCHAR")
 
         loaded = []

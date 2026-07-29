@@ -14,8 +14,7 @@ import streamlit as st
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_top_consignees_by_landed_cost(limit: int = 10):
     session = get_active_session()
-    return session.sql(
-        f"""
+    return session.sql(f"""
         SELECT c.consignee_name, SUM(f.estimated_landed_cost_usd) AS total_landed_cost
         FROM LADINGLENS_DB.GOLD.FACT_SHIPMENTS f
         JOIN LADINGLENS_DB.GOLD.DIM_CONSIGNEE c ON f.consignee_key = c.consignee_key
@@ -23,8 +22,7 @@ def get_top_consignees_by_landed_cost(limit: int = 10):
         GROUP BY c.consignee_name
         ORDER BY total_landed_cost DESC NULLS LAST
         LIMIT {limit}
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -41,8 +39,7 @@ def get_concentration_heatmap_data(top_n_consignees: int = 30):
     Returns a pivoted dataframe: index=consignee_name, columns=hs_2, values=supplier_hhi.
     """
     session = get_active_session()
-    df = session.sql(
-        f"""
+    df = session.sql(f"""
         -- top_consignees: the N consignees to show as heatmap rows
         WITH top_consignees AS (
             SELECT consignee_key, consignee_name
@@ -80,8 +77,7 @@ def get_concentration_heatmap_data(top_n_consignees: int = 30):
         FROM supplier_shares s
         JOIN top_consignees tc ON s.consignee_key = tc.consignee_key
         GROUP BY 1, 2
-    """
-    ).to_pandas()
+    """).to_pandas()
 
     pivot = df.pivot(index="CONSIGNEE_NAME", columns="HS_2", values="SUPPLIER_HHI")
     return pivot
@@ -94,8 +90,7 @@ def get_supplier_breakdown_for_cell(consignee_name: str, hs_2: str):
     the underlying detail behind the aggregated chapter-level HHI number."""
     session = get_active_session()
     safe_name = consignee_name.replace("'", "''")
-    return session.sql(
-        f"""
+    return session.sql(f"""
         SELECT
             m.hs_6, d.hs_6_description,
             m.total_shipment_count AS shipment_count,
@@ -108,8 +103,7 @@ def get_supplier_breakdown_for_cell(consignee_name: str, hs_2: str):
         WHERE c.consignee_name = '{safe_name}'
           AND LEFT(m.hs_6, 2) = '{hs_2}'
         ORDER BY shipment_count DESC
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -123,14 +117,12 @@ def get_ticker_for_consignee(consignee_name: str):
     so it can't produce this failure mode."""
     session = get_active_session()
     safe_name = consignee_name.replace("'", "''")
-    rows = session.sql(
-        f"""
+    rows = session.sql(f"""
         SELECT t.ticker
         FROM LADINGLENS_DB.GOLD.DIM_TICKER t
         JOIN LADINGLENS_DB.GOLD.DIM_CONSIGNEE c ON t.matched_consignee_key = c.consignee_key
         WHERE c.consignee_name = '{safe_name}' AND t.match_confidence = 'exact'
-    """
-    ).collect()
+    """).collect()
     return rows[0]["TICKER"] if rows else None
 
 
@@ -145,8 +137,7 @@ def get_shipment_summary_stats():
         mart_concentration_metrics.is_single_source).
     """
     session = get_active_session()
-    row = session.sql(
-        """
+    row = session.sql("""
         SELECT
             COUNT(*) AS total_shipments,
             COUNT(DISTINCT consignee_key) AS unique_consignees,
@@ -155,8 +146,7 @@ def get_shipment_summary_stats():
             (SELECT COUNT(*) FROM LADINGLENS_DB.GOLD.MART_CONCENTRATION_METRICS
              WHERE is_single_source) AS single_source_pairs
         FROM LADINGLENS_DB.GOLD.FACT_SHIPMENTS
-    """
-    ).collect()[0]
+    """).collect()[0]
     return {
         "total_shipments": row["TOTAL_SHIPMENTS"],
         "unique_consignees": row["UNIQUE_CONSIGNEES"],
@@ -169,21 +159,18 @@ def get_shipment_summary_stats():
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_origin_country_breakdown():
     session = get_active_session()
-    return session.sql(
-        """
+    return session.sql("""
         SELECT origin_country_code AS country, COUNT(*) AS shipments
         FROM LADINGLENS_DB.GOLD.FACT_SHIPMENTS
         GROUP BY 1
         ORDER BY 2 DESC
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_hs_chapter_breakdown():
     session = get_active_session()
-    return session.sql(
-        """
+    return session.sql("""
         SELECT LEFT(hs_6, 2) AS hs_2, COUNT(*) AS shipments
         FROM LADINGLENS_DB.GOLD.FACT_SHIPMENTS
         WHERE hs_6 IS NOT NULL
@@ -192,36 +179,31 @@ def get_hs_chapter_breakdown():
           AND LEFT(hs_6, 2) IN ('84','87','39','73','61','62')
         GROUP BY 1
         ORDER BY 2 DESC
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_scenario_examples(limit: int = 20):
     session = get_active_session()
-    return session.sql(
-        f"""
+    return session.sql(f"""
         SELECT consignee_name, scenario_name, hs_chapter, origin_country,
                total_shipments, baseline_landed_cost_usd, scenario_landed_cost_usd,
                delta_usd, delta_pct
         FROM LADINGLENS_DB.GOLD.MART_SCENARIO_EXAMPLES
         ORDER BY delta_usd DESC
         LIMIT {limit}
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_consignee_options(limit: int = 50):
     session = get_active_session()
-    return session.sql(
-        f"""
+    return session.sql(f"""
         SELECT consignee_key, consignee_name, total_shipments
         FROM LADINGLENS_DB.GOLD.DIM_CONSIGNEE
         ORDER BY total_shipments DESC
         LIMIT {limit}
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 def run_scenario_simulation(
@@ -246,13 +228,11 @@ def run_scenario_simulation(
         }
     ).replace("'", "''")
     safe_key = consignee_key.replace("'", "''")
-    return session.sql(
-        f"""
+    return session.sql(f"""
         CALL LADINGLENS_DB.SEMANTIC.SIMULATE_TARIFF_SCENARIO(
             '{safe_key}', PARSE_JSON('{scenario_json}')
         )
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 def run_agent_query(question: str):
@@ -278,13 +258,11 @@ def run_agent_query(question: str):
     payload = json.dumps(
         {"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]}
     ).replace("'", "''")
-    raw = session.sql(
-        f"""
+    raw = session.sql(f"""
         SELECT SNOWFLAKE.CORTEX.DATA_AGENT_RUN(
             'LADINGLENS_DB.SEMANTIC.LADINGLENS_AGENT', '{payload}'
         )
-    """
-    ).collect()[0][0]
+    """).collect()[0][0]
 
     data = json.loads(raw)
     text_parts = []
@@ -350,14 +328,12 @@ def log_agent_trace(question: str, response: dict, total_latency_ms: int):
     safe_question = question.replace("'", "''")
     safe_answer = response.get("final_answer", "").replace("'", "''")
 
-    session.sql(
-        f"""
+    session.sql(f"""
         INSERT INTO LADINGLENS_DB.GOLD.AGENT_TRACES
             (question, response, tool_calls, total_latency_ms, cost_credits_estimate)
         SELECT '{safe_question}', '{safe_answer}', PARSE_JSON('{tool_calls_json}'),
                {int(total_latency_ms)}, {cost_credits_estimate}
-    """
-    ).collect()
+    """).collect()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -366,16 +342,14 @@ def get_agent_trace_stats():
     estimated cost (both credits and USD at the same estimated rate used in
     log_agent_trace)."""
     session = get_active_session()
-    row = session.sql(
-        """
+    row = session.sql("""
         SELECT
             COUNT(*) AS total_queries,
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_latency_ms) AS p50_latency_ms,
             PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms,
             AVG(cost_credits_estimate) AS avg_cost_credits_estimate
         FROM LADINGLENS_DB.GOLD.AGENT_TRACES
-    """
-    ).collect()[0]
+    """).collect()[0]
     return {
         "total_queries": row["TOTAL_QUERIES"] or 0,
         "p50_latency_ms": row["P50_LATENCY_MS"] or 0,
@@ -389,25 +363,21 @@ def get_agent_trace_stats():
 @st.cache_data(ttl=300, show_spinner=False)
 def get_recent_traces(limit: int = 20):
     session = get_active_session()
-    return session.sql(
-        f"""
+    return session.sql(f"""
         SELECT timestamp, question, total_latency_ms, cost_credits_estimate,
                tool_calls
         FROM LADINGLENS_DB.GOLD.AGENT_TRACES
         ORDER BY timestamp DESC
         LIMIT {limit}
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_latency_distribution():
     session = get_active_session()
-    return session.sql(
-        """
+    return session.sql("""
         SELECT total_latency_ms FROM LADINGLENS_DB.GOLD.AGENT_TRACES
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -415,15 +385,13 @@ def get_tool_usage_breakdown():
     """Flattens tool_calls across all traces to count how often each tool
     was invoked."""
     session = get_active_session()
-    return session.sql(
-        """
+    return session.sql("""
         SELECT tc.value:tool_name::STRING AS tool_name, COUNT(*) AS n_calls
         FROM LADINGLENS_DB.GOLD.AGENT_TRACES,
              LATERAL FLATTEN(input => tool_calls) tc
         GROUP BY 1
         ORDER BY 2 DESC
-    """
-    ).to_pandas()
+    """).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -439,11 +407,9 @@ def get_10k_search_for_ticker(ticker: str, query: str = "tariff exposure", k: in
             "filter": {"@eq": {"ticker": ticker}},
         }
     ).replace("'", "''")
-    raw = session.sql(
-        f"""
+    raw = session.sql(f"""
         SELECT PARSE_JSON(SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
             'LADINGLENS_DB.SEMANTIC.RISK_FACTORS_SEARCH', '{payload}'
         )):results
-    """
-    ).collect()[0][0]
+    """).collect()[0][0]
     return json.loads(raw)

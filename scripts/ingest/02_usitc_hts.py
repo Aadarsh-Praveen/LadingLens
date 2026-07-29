@@ -123,8 +123,7 @@ def load_to_snowflake(csv_path):
     conn = connect()
     cur = conn.cursor()
     try:
-        cur.execute(
-            f"""
+        cur.execute(f"""
             CREATE OR REPLACE TABLE {TABLE} (
                 hts_number VARCHAR,
                 description VARCHAR,
@@ -141,12 +140,10 @@ def load_to_snowflake(csv_path):
                 hs10 VARCHAR,
                 ingested_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
             )
-            """
-        )
+            """)
         cur.execute(f"PUT file://{csv_path} @{STAGE}/hts/ AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
 
-        cur.execute(
-            f"""
+        cur.execute(f"""
             COPY INTO {TABLE} (
                 hts_number, description, indent, units, general_rate_text,
                 special_rate_text, column2_rate_text, footnotes,
@@ -162,8 +159,7 @@ def load_to_snowflake(csv_path):
             )
             ON_ERROR = 'CONTINUE'
             PURGE = FALSE
-            """
-        )
+            """)
 
         cur.execute(f"SELECT COUNT(*) FROM {TABLE}")
         total = cur.fetchone()[0]

@@ -55,8 +55,7 @@ def main():
     conn = connect()
     cur = conn.cursor()
 
-    cur.execute(
-        f"""
+    cur.execute(f"""
         CREATE OR REPLACE TABLE {TABLE} (
             consignee_key STRING,
             consignee_name STRING,
@@ -72,17 +71,14 @@ def main():
             delta_usd FLOAT,
             delta_pct FLOAT
         )
-    """
-    )
+    """)
 
-    cur.execute(
-        """
+    cur.execute("""
         SELECT consignee_key, consignee_name
         FROM LADINGLENS_DB.GOLD.DIM_CONSIGNEE
         ORDER BY total_shipments DESC
         LIMIT 20
-    """
-    )
+    """)
     consignees = cur.fetchall()
 
     all_rows = []
@@ -91,14 +87,12 @@ def main():
         for scenario_name, scenario_dict in SCENARIOS:
             n_calls += 1
             scenario_json = json.dumps(scenario_dict).replace("'", "''")
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 CALL LADINGLENS_DB.SEMANTIC.SIMULATE_TARIFF_SCENARIO(
                     '{consignee_key}',
                     PARSE_JSON('{scenario_json}')
                 )
-            """
-            )
+            """)
             for r in cur.fetchall():
                 (
                     hs_chapter,

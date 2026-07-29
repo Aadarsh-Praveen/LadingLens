@@ -80,8 +80,7 @@ def check_prerequisite():
 
 def try_create_iceberg_volume(cur):
     try:
-        cur.execute(
-            f"""
+        cur.execute(f"""
             CREATE EXTERNAL VOLUME IF NOT EXISTS {ICEBERG_VOLUME}
             STORAGE_LOCATIONS = (
                 (
@@ -91,8 +90,7 @@ def try_create_iceberg_volume(cur):
                     STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::000000000000:role/ladinglens-iceberg-role'
                 )
             )
-            """
-        )
+            """)
         print(f"Created (or found existing) external volume {ICEBERG_VOLUME}.")
         return True
     except Exception as exc:  # noqa: BLE001 -- intentionally broad: any external-volume
@@ -108,16 +106,14 @@ def create_table(cur, use_iceberg):
 
     if use_iceberg:
         try:
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 CREATE OR REPLACE ICEBERG TABLE {TABLE} (
                     {cols_ddl}
                 )
                 CATALOG = 'SNOWFLAKE'
                 EXTERNAL_VOLUME = '{ICEBERG_VOLUME}'
                 BASE_LOCATION = 'bol_shipments/'
-                """
-            )
+                """)
             print(f"Created Iceberg table {TABLE}.")
             return True
         except Exception as exc:  # noqa: BLE001 -- intentionally broad, same rationale
@@ -145,8 +141,7 @@ def put_and_copy(cur, multi_line=False):
     print(f"PUT complete: {put_result}")
 
     multi_line_clause = "\n                MULTI_LINE = TRUE" if multi_line else ""
-    cur.execute(
-        f"""
+    cur.execute(f"""
         COPY INTO {TABLE} ({", ".join(LOAD_COLUMN_NAMES)})
         FROM @{STAGE}/bol/{BOL_FILE.name}
         FILE_FORMAT = (
@@ -159,8 +154,7 @@ def put_and_copy(cur, multi_line=False):
         )
         ON_ERROR = 'CONTINUE'
         PURGE = FALSE
-        """
-    )
+        """)
     copy_results = cur.fetchall()
     columns = [d[0] for d in cur.description]
     return [dict(zip(columns, row)) for row in copy_results]
