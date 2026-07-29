@@ -7,8 +7,6 @@
 
 ![Concentration Heatmap](docs/screenshots/concentration_heatmap.png)
 
-**Demo video:** [link pending recording — see `docs/DEMO.md`]
-
 ---
 
 ## The Problem
@@ -164,7 +162,3 @@ Full list, with the reasoning behind every judgment call: [`data/sources.md`](da
 ## Deferred Work
 
 Every deferred item has a specific production path forward, not just a TODO. Full list: [`docs/roadmap.md`](docs/roadmap.md).
-
-## Author
-
-Aadarsh Praveen — built solo for the Snowflake CoCo CLI Hackathon 2026.
