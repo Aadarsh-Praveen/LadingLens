@@ -1,0 +1,39 @@
+name: dbt Compile Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  dbt-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dbt
+        run: pip install dbt-core dbt-snowflake
+      - name: Set up dbt profile (dummy values -- dbt parse never opens a live connection)
+        env:
+          SNOWFLAKE_PRIVATE_KEY_DUMMY: "dummy"
+        run: |
+          mkdir -p ~/.dbt
+          cp dbt/profiles.yml.example ~/.dbt/profiles.yml
+          # dbt parse needs private_key_path to resolve to *some* file, even
+          # though it never reads it -- point it at a throwaway placeholder.
+          echo "$SNOWFLAKE_PRIVATE_KEY_DUMMY" > /tmp/dummy_key.p8
+      - name: dbt parse (syntactic check, no live warehouse connection)
+        env:
+          SNOWFLAKE_ACCOUNT: dummy
+          SNOWFLAKE_USER: dummy
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key.p8
+          SNOWFLAKE_ROLE: dummy
+          SNOWFLAKE_WAREHOUSE: dummy
+          SNOWFLAKE_DATABASE: dummy
+        run: |
+          cd dbt/ladinglens
+          dbt deps
+          dbt parse

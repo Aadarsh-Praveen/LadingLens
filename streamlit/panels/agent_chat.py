@@ -11,12 +11,13 @@ st.spinner with the same result correctness, just without the animated
 narrative.
 """
 
+import json
 import threading
 import time
 
 import streamlit as st
 
-from utils.snowflake_queries import run_agent_query
+from utils.snowflake_queries import run_agent_query, log_agent_trace
 
 EXAMPLE_QUESTIONS = [
     "What does Caterpillar disclose about tariff exposure in their 10-K?",
@@ -103,7 +104,7 @@ def render():
             if entry.get("tool_trace"):
                 with st.expander("Tools used"):
                     for tool_call in entry["tool_trace"]:
-                        st.code(tool_call)
+                        st.code(f"{tool_call['tool_name']}({json.dumps(tool_call['arguments'])})")
 
     user_question = st.chat_input("Ask a question...")
     if "pending_question" in st.session_state:
@@ -115,7 +116,14 @@ def render():
         with st.chat_message("user"):
             st.markdown(user_question)
 
+        t0 = time.time()
         response = _run_with_progress(user_question)
+        total_latency_ms = int((time.time() - t0) * 1000)
+
+        try:
+            log_agent_trace(user_question, response, total_latency_ms)
+        except Exception:  # noqa: BLE001
+            pass  # observability logging must never break the chat UI
 
         st.session_state.chat_history.append(
             {

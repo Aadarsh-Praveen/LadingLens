@@ -1,0 +1,22 @@
+name: Python Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install linters
+        run: pip install ruff black
+      - name: Ruff check
+        run: ruff check . --exclude .venv --exclude dbt_packages
+      - name: Black format check
+        run: black --check . --exclude '(\.venv|dbt_packages)'

@@ -1,5 +1,5 @@
 import streamlit as st
-from panels import executive, heatmap, scenarios, agent_chat
+from panels import executive, heatmap, scenarios, agent_chat, observability
 
 st.set_page_config(
     page_title="LadingLens",
@@ -14,12 +14,13 @@ st.markdown(
     "Built on Snowflake Cortex + dbt medallion pipeline over 89,200 shipments."
 )
 
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
         "Executive Overview",
         "Concentration Heatmap",
         "Scenario Simulator",
         "Ask LadingLens",
+        "Observability",
     ]
 )
 
@@ -31,6 +32,8 @@ with tab3:
     scenarios.render()
 with tab4:
     agent_chat.render()
+with tab5:
+    observability.render()
 
 st.markdown("---")
 st.caption(

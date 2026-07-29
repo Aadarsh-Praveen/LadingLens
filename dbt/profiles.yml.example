@@ -1,6 +1,16 @@
 # Example dbt profile for LadingLens.
 # Copy to ~/.dbt/profiles.yml and it will read credentials from environment
 # variables (see .env.example at the project root) — never hardcode secrets here.
+#
+# Uses key-pair (private_key_path) auth, not password auth: this account
+# requires MFA for human/password logins (see docs/phases/phase-04-dbt-and-er.md
+# and scripts/ingest/_snowflake_conn.py, which establishes the same pattern for
+# the Python ingest scripts), so scripted/unattended connections -- including
+# dbt itself -- use an RSA key pair registered on the user instead. Corrected
+# in Phase 10 after discovering this file had drifted to a password-auth
+# example that doesn't actually work against this account; every dbt command
+# run throughout this project's build used key-pair auth via the real
+# ~/.dbt/profiles.yml, which this file previously didn't match.
 
 ladinglens:
   target: dev
@@ -9,9 +19,10 @@ ladinglens:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user: "{{ env_var('SNOWFLAKE_USER') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
       role: "{{ env_var('SNOWFLAKE_ROLE') }}"
       database: "{{ env_var('SNOWFLAKE_DATABASE', 'LADINGLENS_DB') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'LADINGLENS_WH') }}"
       schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'RAW') }}"
       threads: 4
+      client_session_keep_alive: False

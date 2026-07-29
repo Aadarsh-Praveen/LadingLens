@@ -1,0 +1,37 @@
+name: dbt Live Test (manual)
+
+# Manual trigger only -- running the full dbt test suite against live Snowflake
+# burns warehouse + Cortex credits on every invocation, so this is intentionally
+# NOT wired to push/pull_request (unlike lint.yml and dbt-compile.yml).
+on:
+  workflow_dispatch:
+
+jobs:
+  dbt-test-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dbt
+        run: pip install dbt-core dbt-snowflake
+      - name: Set up dbt profile (real credentials from GitHub Secrets)
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.dbt
+          cp dbt/profiles.yml.example ~/.dbt/profiles.yml
+          echo "$SNOWFLAKE_PRIVATE_KEY" > /tmp/snowflake_key.p8
+      - name: dbt build + test (live warehouse connection)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        run: |
+          cd dbt/ladinglens
+          dbt deps
+          dbt build

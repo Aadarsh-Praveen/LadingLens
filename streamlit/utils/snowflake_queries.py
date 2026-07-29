@@ -248,7 +248,15 @@ def run_agent_query(question: str):
     {'final_answer', 'tool_calls'} shape the original Phase 9 doc's stub
     assumed). Not cached -- user-initiated action.
 
-    Returns {'final_answer': str, 'tool_calls': list[str]}.
+    Returns {'final_answer': str, 'tool_calls': list[{'tool_name', 'arguments'}],
+    'input_tokens': int, 'output_tokens': int, 'model_name': str}.
+
+    Note on tool_calls: no per-tool latency is available anywhere in this
+    response -- only total wall-clock time around the whole call (measured by
+    the caller). Token counts come from the response's own
+    metadata.usage.tokens_consumed block and feed the AGENT_TRACES cost
+    estimate (see log_agent_trace) -- this is the real, but incomplete,
+    granularity DATA_AGENT_RUN exposes.
     """
     session = get_active_session()
     payload = json.dumps(
@@ -274,11 +282,127 @@ def run_agent_query(question: str):
             "system_execute_sql",
             "system_agentic_semantic_context",
         ):
-            tool_calls.append(block["tool_use"]["name"])
+            tool_calls.append(
+                {
+                    "tool_name": block["tool_use"]["name"],
+                    "arguments": block["tool_use"].get("input", {}),
+                }
+            )
+
+    input_tokens = output_tokens = 0
+    model_name = None
+    usage_list = data.get("metadata", {}).get("usage", {}).get("tokens_consumed", [])
+    for usage in usage_list:
+        input_tokens += usage.get("input_tokens", {}).get("total", 0) or 0
+        output_tokens += usage.get("output_tokens", {}).get("total", 0) or 0
+        model_name = usage.get("model_name", model_name)
+
     return {
         "final_answer": "".join(text_parts).strip() or "(no answer text returned)",
         "tool_calls": tool_calls,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "model_name": model_name,
     }
+
+
+# Rough per-token cost, NOT a measured figure. Based on publicly reported
+# Cortex AI Functions pricing for Claude Opus (~12 AI Credits per million
+# tokens, AI Credits at $2.00/credit global rate) as of mid-2026 -- see
+# docs/roadmap.md's Observability section for why this can't be reconciled
+# against actual billing (CORTEX_FUNCTIONS_USAGE_HISTORY still returns zero
+# rows for this account as of Phase 10). Treated as a single blended
+# input+output rate since a precise input/output split wasn't available.
+_ESTIMATED_CREDITS_PER_MILLION_TOKENS = 12.0
+_ESTIMATED_USD_PER_CREDIT = 2.00
+
+
+def log_agent_trace(question: str, response: dict, total_latency_ms: int):
+    """Writes one row to AGENT_TRACES after a successful agent call. Best-
+    effort -- failures here must never break the chat UI, so callers should
+    wrap this in a try/except and ignore errors."""
+    session = get_active_session()
+    total_tokens = response.get("input_tokens", 0) + response.get("output_tokens", 0)
+    cost_credits_estimate = (total_tokens / 1_000_000.0) * _ESTIMATED_CREDITS_PER_MILLION_TOKENS
+
+    tool_calls_json = json.dumps(response.get("tool_calls", [])).replace("'", "''")
+    safe_question = question.replace("'", "''")
+    safe_answer = response.get("final_answer", "").replace("'", "''")
+
+    session.sql(
+        f"""
+        INSERT INTO LADINGLENS_DB.GOLD.AGENT_TRACES
+            (question, response, tool_calls, total_latency_ms, cost_credits_estimate)
+        SELECT '{safe_question}', '{safe_answer}', PARSE_JSON('{tool_calls_json}'),
+               {int(total_latency_ms)}, {cost_credits_estimate}
+    """
+    ).collect()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_agent_trace_stats():
+    """KPIs for the observability panel: total queries, p50/p95 latency, avg
+    estimated cost (both credits and USD at the same estimated rate used in
+    log_agent_trace)."""
+    session = get_active_session()
+    row = session.sql(
+        """
+        SELECT
+            COUNT(*) AS total_queries,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_latency_ms) AS p50_latency_ms,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms,
+            AVG(cost_credits_estimate) AS avg_cost_credits_estimate
+        FROM LADINGLENS_DB.GOLD.AGENT_TRACES
+    """
+    ).collect()[0]
+    return {
+        "total_queries": row["TOTAL_QUERIES"] or 0,
+        "p50_latency_ms": row["P50_LATENCY_MS"] or 0,
+        "p95_latency_ms": row["P95_LATENCY_MS"] or 0,
+        "avg_cost_credits_estimate": row["AVG_COST_CREDITS_ESTIMATE"] or 0,
+        "avg_cost_usd_estimate": (row["AVG_COST_CREDITS_ESTIMATE"] or 0)
+        * _ESTIMATED_USD_PER_CREDIT,
+    }
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_recent_traces(limit: int = 20):
+    session = get_active_session()
+    return session.sql(
+        f"""
+        SELECT timestamp, question, total_latency_ms, cost_credits_estimate,
+               tool_calls
+        FROM LADINGLENS_DB.GOLD.AGENT_TRACES
+        ORDER BY timestamp DESC
+        LIMIT {limit}
+    """
+    ).to_pandas()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_latency_distribution():
+    session = get_active_session()
+    return session.sql(
+        """
+        SELECT total_latency_ms FROM LADINGLENS_DB.GOLD.AGENT_TRACES
+    """
+    ).to_pandas()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_tool_usage_breakdown():
+    """Flattens tool_calls across all traces to count how often each tool
+    was invoked."""
+    session = get_active_session()
+    return session.sql(
+        """
+        SELECT tc.value:tool_name::STRING AS tool_name, COUNT(*) AS n_calls
+        FROM LADINGLENS_DB.GOLD.AGENT_TRACES,
+             LATERAL FLATTEN(input => tool_calls) tc
+        GROUP BY 1
+        ORDER BY 2 DESC
+    """
+    ).to_pandas()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
