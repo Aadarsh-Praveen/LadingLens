@@ -836,3 +836,115 @@
       conversational interface" story that defines LadingLens as a product --
       demonstrated end-to-end via the smoke test's fusion queries (Q9, Q10),
       which is the single hardest thing this project set out to prove works.
+
+## Phase 9
+
+- **Phase 9 wrap — Streamlit-in-Snowflake UI:**
+
+    Four-panel Streamlit application deployed as `LADINGLENS_DB.SEMANTIC.LADINGLENS_APP`,
+    verified end-to-end against the live app (not just the underlying SQL) via
+    real screenshots -- see `docs/screenshots/`.
+
+    **Two fixes baked in per pre-build review, both confirmed necessary:**
+    - Panel 2's heatmap HHI is recomputed at HS-2 (chapter) grain directly from
+      `fact_shipments`, not derived from `mart_concentration_metrics` (which is
+      HS-6 grain) -- HHI isn't additive/averageable across subgroups, so
+      combining pre-computed HS-6 values into a chapter number would repeat the
+      same class of error caught and fixed in Phase 8's scenario procedure
+      (averaged-rate arithmetic bug). The heatmap screenshot confirms real,
+      varied HHI values (0.17-1.0) recomputed correctly at chapter grain.
+    - The scenario picker's origin-country dropdown uses the real 8 countries
+      in this dataset (BE, CN, DE, ES, FR, GB, MX, VN) instead of the original
+      doc's list, which included "IT" (Italy) -- verified to have zero
+      shipments anywhere in `fact_shipments`.
+
+    **A real, demo-relevant bug was caught and worked around during the
+    build**, not just at the pre-build review stage: the heatmap's planned
+    "click a consignee -> see its 10-K" feature would have used `dim_ticker`'s
+    fuzzy `partial`-confidence matches, several of which are confirmed false
+    positives from Phase 7's first-token substring matching -- `HPQ` (Hewlett-
+    Packard) matches "FORD MOTOR COMPANY (HP05A)" purely because "HP" appears
+    inside an internal routing code; `AAPL` matches "ASA APPLE"; `AMD` matches
+    "LUBRIZOL ADVANCED MATERIAL INC." on the word "Advanced." Showing a
+    confidently-labeled 10-K excerpt from the wrong company under a UI badge
+    would be worse than showing fewer tickers, so the ticker-link feature was
+    restricted to `match_confidence = 'exact'` only (which requires literal
+    name equality and can't produce this failure mode), trading some coverage
+    for correctness.
+
+    **Package management gotcha, undocumented in the original Phase 9 doc**:
+    `CREATE STREAMLIT`'s default package set
+    (`python==3.11.*,snowflake-snowpark-python,streamlit`) does NOT include
+    plotly. `ALTER STREAMLIT ... SET PACKAGES` does not exist as a settable
+    property (`invalid property 'PACKAGES' for 'STREAMLIT'`). The actual
+    mechanism is an `environment.yml` file (conda-style,
+    `channels: [snowflake]`) uploaded to the same stage folder as `app.py`,
+    picked up on the next `CREATE OR REPLACE STREAMLIT` -- confirmed via
+    `DESC STREAMLIT`'s `user_packages` field and via the deployed app
+    successfully rendering plotly charts. See `scripts/deploy_streamlit.sql`
+    for the corrected, real deployment sequence.
+
+    **`run_agent_query`'s return shape was rebuilt from Phase 8 knowledge, not
+    the doc's stub.** The original doc's sketch assumed
+    `response['final_answer']` / `response.get('tool_calls', [])` as if
+    `DATA_AGENT_RUN` returned that shape directly; the real response is a
+    `content` array of `text`/`tool_use`/`tool_result` blocks (reverse-
+    engineered in Phase 8). Built the real parsing logic directly rather than
+    the placeholder.
+
+    **Browser access constraint**: the Chrome extension was not connected in
+    this environment, so Steps 9's "open the deployed app, test each panel,
+    capture screenshots" could not be done by the agent directly. The user
+    tested the live app and supplied all 8 screenshots; the agent inspected
+    each one, confirmed correctness against previously-verified data (e.g.
+    Executive Overview's KPIs matching exactly, scenario simulator arithmetic
+    checked row-by-row), and renamed them to the deliverable naming convention.
+
+    Screenshots at `docs/screenshots/` (8 total, exceeding the 6-8 target):
+    `executive_overview.png`, `concentration_heatmap.png`,
+    `scenario_simulator_examples.png`, `scenario_simulator_with_result.png`,
+    `scenario_simulator_ceva_allchapters.png`,
+    `scenario_simulator_mercedes_de_filter.png`,
+    `agent_chat_concentration_question.png`, `agent_chat_answer.png` (the
+    BMW Section-232-doubling fusion query -- structured lookup chained into
+    the scenario simulator -- matching the original doc's own callout that a
+    fusion query is "the single strongest demo moment").
+
+    **Known open items:**
+    - **Agent chat panel markdown-rendering collision**: `agent_chat_answer.png`
+      shows a garbled text fragment ("130,968across14shipmentsat26.825,616**")
+      where agent responses containing markdown-special characters (asterisks/
+      underscores) around numeric fragments cause `st.markdown()` to collapse
+      spaces and misinterpret formatting. Cosmetic only -- the underlying data
+      and tool orchestration are correct, confirmed by cross-checking the
+      rendered table (duty rate 27.5%->52.5%, landed cost $130,968->$156,584,
+      +$25,616/+19.6%) against independently-known BMW Manufacturing Corp
+      figures. Candidate fix for Phase 10 polish: sanitize numeric fragments
+      or wrap them in code blocks before the `st.markdown()` call.
+    - **Streamlit-in-Snowflake `environment.yml` requirement**: package
+      dependencies for the Streamlit app are declared via an `environment.yml`
+      file (conda-style, `channels: [snowflake]`) uploaded alongside `app.py`
+      in the deployment stage. Picked up on the next `CREATE OR REPLACE
+      STREAMLIT`. Neither `ALTER STREAMLIT ... SET PACKAGES` nor a `PACKAGES`
+      parameter on `CREATE STREAMLIT` works (`invalid property 'PACKAGES' for
+      'STREAMLIT'`). See `scripts/deploy_streamlit.sql` for the correct
+      deployment sequence -- worth remembering for Phase 10 if the app needs
+      further package additions.
+
+    Design notes (matching the original doc):
+    - Streamlit tabs (not multipage) for top-level navigation.
+    - Aggressive `st.cache_data(ttl=3600)` on all read queries.
+    - Threading-based progress narrative on the agent chat panel, with a
+      plain-spinner fallback if the background thread approach raises --
+      not hit in testing (all example questions completed via the animated
+      path), but the fallback exists per the doc's own risk callout.
+    - HS chapter labels mapped to human-friendly names throughout.
+    - Muted colorblind-safe palette; HHI thresholds (0.15/0.25) are the
+      standard DOJ/FTC 1500/2500 thresholds scaled to this project's 0-1
+      fractional HHI convention.
+
+    What Phase 9 unlocks:
+    - A live, screenshot-verified product surface a hackathon judge or
+      interviewer can open directly in Snowsight.
+    - Phase 10 (observability + demo video) has a fully working, visually
+      confirmed product to record and instrument.
