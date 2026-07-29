@@ -39,37 +39,7 @@ That last screenshot is the single hardest architectural claim in this project: 
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph Sources
-        A[NIST FEIII 2019 BoL<br/>3.8M shipment rows]
-        B[USITC HTS<br/>32,455 tariff rows]
-        C[SEC 10-K/20-F<br/>24 filings]
-    end
-    subgraph Pipeline["dbt medallion pipeline"]
-        D[Bronze<br/>typed, deduped]
-        E[Silver<br/>entity resolution +<br/>HS classification]
-        F[Gold<br/>Kimball star schema]
-    end
-    subgraph Semantic["Semantic layer"]
-        G[Native SEMANTIC VIEW]
-        H[Cortex Search]
-    end
-    I[Cortex Agent<br/>3 tools]
-    J[Streamlit-in-Snowflake<br/>5 panels]
-
-    A --> D
-    B --> D
-    C --> H
-    D --> E --> F
-    F --> G
-    F --> I
-    G --> I
-    H --> I
-    I --> J
-    G --> J
-    H --> J
-```
+![Architecture overview](docs/architecture/readme-architecture.png)
 
 Full writeup with tool-choice tradeoffs and layer-by-layer detail: [`docs/architecture.md`](docs/architecture.md).
 
@@ -172,6 +142,7 @@ scripts/                  Publish/deploy scripts for each Snowflake-native objec
 agent/ladinglens_agent.yaml   Cortex Agent specification (readable copy; publish_agent.sql is the source of truth)
 streamlit/                Streamlit-in-Snowflake app (5 panels)
 docs/screenshots/          8 screenshots from the live deployed app
+docs/architecture/         Architecture diagrams referenced in this README and docs/architecture.md
 data/sources.md            Full data provenance + every documented data-quality catch
 ```
 

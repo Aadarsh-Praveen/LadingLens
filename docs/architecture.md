@@ -2,65 +2,7 @@
 
 ## 1. High-level architecture
 
-```mermaid
-flowchart TB
-    subgraph Sources["Raw Sources"]
-        S1[NIST FEIII 2019 BoL<br/>3,825,304 rows]
-        S2[USITC HTS<br/>32,455 rows]
-        S3[SEC 10-K/20-F<br/>24 filings]
-    end
-
-    subgraph Bronze["Bronze — typed, deduped"]
-        B1[bronze_bol]
-        B2[bronze_hts]
-        B3[RAW.SEC_10K_FILINGS]
-    end
-
-    subgraph Silver["Silver — entity resolution + HS classification"]
-        SV1[silver_supplier_golden<br/>silver_consignee_golden]
-        SV2[silver_bol_shipments_scoped<br/>89,200 rows]
-    end
-
-    subgraph Gold["Gold — Kimball star schema"]
-        G1[dim_country, dim_hs_code,<br/>dim_supplier, dim_consignee, dim_date]
-        G2[fact_shipments<br/>fact_tariff_events]
-        G3[mart_concentration_metrics<br/>mart_scenario_examples]
-        G4[dim_ticker<br/>fact_10k_risk_chunks]
-    end
-
-    subgraph SemanticLayer["Semantic Layer"]
-        SEM1[Native SEMANTIC VIEW]
-        SEM2[Cortex Search:<br/>RISK_FACTORS_SEARCH]
-    end
-
-    subgraph Application["Application Layer"]
-        APP1[Cortex Agent:<br/>LADINGLENS_AGENT]
-        APP2[Snowpark procedure:<br/>SIMULATE_TARIFF_SCENARIO]
-        APP3[Streamlit-in-Snowflake:<br/>5 panels]
-    end
-
-    S1 --> B1
-    S2 --> B2
-    S3 --> B3
-    B1 --> SV1
-    B1 --> SV2
-    B2 --> SV2
-    SV1 --> G1
-    SV2 --> G2
-    G1 --> G2
-    G2 --> G3
-    B3 --> G4
-    G2 --> SEM1
-    G3 --> SEM1
-    G4 --> SEM2
-    SEM1 --> APP1
-    SEM2 --> APP1
-    APP2 --> APP1
-    APP1 --> APP3
-    SEM1 --> APP3
-    SEM2 --> APP3
-    APP2 --> APP3
-```
+![Full architecture diagram](architecture/full-architecture-diagram.png)
 
 ## 2. Data flow
 
