@@ -150,7 +150,7 @@ snowsql -f ../../scripts/publish_agent.sql
 snowsql -f ../../scripts/deploy_streamlit.sql
 ```
 
-Every phase's exact build steps, verified findings, and deviations from plan are documented in `docs/phases/phase-01-*.md` through `phase-09-*.md`, and consolidated in `data/sources.md`.
+Every phase's build decisions, verified findings, and deviations from plan are captured in `docs/architecture.md` (design tradeoffs), `docs/metrics.md` (numbers), `docs/roadmap.md` (deferred work), and `data/sources.md` (data-quality catches).
 
 ## Repo Layout
 
@@ -171,14 +171,13 @@ scripts/                  Publish/deploy scripts for each Snowflake-native objec
   deploy_streamlit.sql
 agent/ladinglens_agent.yaml   Cortex Agent specification (readable copy; publish_agent.sql is the source of truth)
 streamlit/                Streamlit-in-Snowflake app (5 panels)
-docs/phases/               Phase-by-phase build plans (as originally scoped)
 docs/screenshots/          8 screenshots from the live deployed app
 data/sources.md            Full data provenance + every documented data-quality catch
 ```
 
 ## Project Timeline
 
-Built solo across 9 phases in ~7-8 calendar days (first commit 2026-07-22, Phase 9 commit 2026-07-29) — foundation and ingestion, EDA and scope-pivot, dbt entity resolution, retrieval-augmented HS classification, the Gold star schema and semantic view, Cortex Search, the Cortex Agent and scenario simulator, and the Streamlit UI, in that order. Each phase's doc records what was planned versus what was actually verified and built, including every place the two diverged.
+Built solo across 10 phases in ~7-8 calendar days (first commit 2026-07-22, most recent commit 2026-07-29) — foundation and ingestion, EDA and scope-pivot, dbt entity resolution, retrieval-augmented HS classification, the Gold star schema and semantic view, Cortex Search, the Cortex Agent and scenario simulator, the Streamlit UI, and finally observability/CI/CD/demo packaging, in that order.
 
 ## Data Quality Discipline
 

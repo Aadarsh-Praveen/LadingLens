@@ -28,7 +28,7 @@ Idempotent: MERGE upsert on (cik, filing_date).
 
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -39,7 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _snowflake_conn import connect  # noqa: E402
+from _snowflake_conn import connect
 
 TICKERS_FILE = REPO_ROOT / "config" / "target_tickers.yml"
 SEC_DIR = REPO_ROOT / "data" / "raw" / "sec"
@@ -162,6 +162,8 @@ def load_tickers():
 
 
 def strip_html(text):
+    """Strip tags, inline-XBRL metadata, and HTML entities from a raw filing
+    document, leaving plain narrative text for section-boundary regexes."""
     text = re.sub(r"(?is)<(script|style).*?</\1>", " ", text)
     # Inline-XBRL header block: a hidden metadata blob (context/unit
     # declarations for every tagged fact) that modern large filers embed at
@@ -217,6 +219,9 @@ def extract_section(plain_text, start_pat, end_pats):
 
 
 def extract_cik_and_date(full_submission_text, accession_folder_name):
+    """Parse CIK and filing date from the submission header, falling back to
+    deriving the CIK from the accession folder name if the header field is
+    missing."""
     cik = None
     cik_match = re.search(r"CENTRAL INDEX KEY:\s*(\d+)", full_submission_text)
     if cik_match:
@@ -227,16 +232,23 @@ def extract_cik_and_date(full_submission_text, accession_folder_name):
     filing_date = None
     date_match = re.search(r"FILED AS OF DATE:\s*(\d{8})", full_submission_text)
     if date_match:
-        filing_date = datetime.strptime(date_match.group(1), "%Y%m%d").date()
+        # SEC's "FILED AS OF DATE" is a calendar date with no associated
+        # timezone in the source data, and .date() discards time anyway.
+        filing_date = datetime.strptime(date_match.group(1), "%Y%m%d").date()  # noqa: DTZ007
     return cik, filing_date
 
 
 def download_and_parse(ticker, cik, filing_type):
+    """Download the most recent filing_type filing for a ticker (2023-2025
+    window), extract its primary/secondary risk-disclosure sections, and
+    return a dict ready for load_filing -- or None if download, file
+    location, or parsing fails at any step."""
     dl = Downloader(COMPANY_NAME, CONTACT_EMAIL, SEC_DIR)
     identifier = cik if cik else ticker
     try:
         n = dl.get(filing_type, identifier, limit=1, after="2023-01-01", before="2025-12-31")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- log and skip this ticker rather than
+        # aborting the whole multi-ticker ingest run over one filer's failure.
         print(f"  {ticker}: download failed ({exc})")
         return None
     if n == 0:
@@ -324,7 +336,10 @@ def load_filing(cur, filing):
 
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting SEC 10-K/20-F ingest")
+    """Run the full SEC ingest: load target tickers, download and extract
+    each filing, gate on a minimum extracted-section length, upsert passing
+    filings, and print a per-ticker pass/fail summary."""
+    print(f"[{datetime.now(UTC).isoformat()}] Starting SEC 10-K/20-F ingest")
     tickers = load_tickers()
     print(f"Loaded {len(tickers)} target tickers from {TICKERS_FILE}")
 

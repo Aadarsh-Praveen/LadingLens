@@ -1,18 +1,20 @@
 """Panel 1: Executive Dashboard -- corpus-at-a-glance overview."""
 
-import streamlit as st
 import plotly.express as px
-
 from utils.snowflake_queries import (
-    get_shipment_summary_stats,
-    get_origin_country_breakdown,
     get_hs_chapter_breakdown,
+    get_origin_country_breakdown,
+    get_shipment_summary_stats,
     get_top_consignees_by_landed_cost,
 )
-from utils.theme import PRIMARY, ACCENT, HS_CHAPTER_LABELS
+from utils.theme import ACCENT, HS_CHAPTER_LABELS, PRIMARY
+
+import streamlit as st
 
 
 def render():
+    """Render the Executive Overview panel: summary KPIs, origin-country and
+    HS-chapter breakdowns, and a top-consignees-by-landed-cost chart."""
     st.markdown("## Executive Overview")
     st.markdown("A view of the LadingLens analytical corpus at a glance.")
 
@@ -61,7 +63,7 @@ def render():
         color_discrete_sequence=[ACCENT],
         labels={"TOTAL_LANDED_COST": "Total landed cost (USD)", "CONSIGNEE_NAME": ""},
     )
-    fig.update_layout(yaxis=dict(autorange="reversed"))
+    fig.update_layout(yaxis={"autorange": "reversed"})
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
         "Note: several top entries (e.g. freight forwarders) act as consignee-of-record "

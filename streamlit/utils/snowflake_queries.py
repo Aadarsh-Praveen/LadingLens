@@ -6,8 +6,9 @@ All queries run through the active Snowpark session provided by SiS
 
 import json
 
-import streamlit as st
 from snowflake.snowpark.context import get_active_session
+
+import streamlit as st
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -41,13 +42,16 @@ def get_concentration_heatmap_data(top_n_consignees: int = 30):
     """
     session = get_active_session()
     df = session.sql(
-        """
+        f"""
+        -- top_consignees: the N consignees to show as heatmap rows
         WITH top_consignees AS (
             SELECT consignee_key, consignee_name
             FROM LADINGLENS_DB.GOLD.DIM_CONSIGNEE
             ORDER BY total_shipments DESC
-            LIMIT {top_n}
+            LIMIT {top_n_consignees}
         ),
+        -- consignee_chapter_supplier: one row per (consignee, HS chapter, supplier)
+        -- with that supplier's shipment count in the cell
         consignee_chapter_supplier AS (
             SELECT f.consignee_key, LEFT(f.hs_6, 2) AS hs_2, f.supplier_key,
                    COUNT(*) AS supplier_shipments
@@ -57,11 +61,15 @@ def get_concentration_heatmap_data(top_n_consignees: int = 30):
               AND LEFT(f.hs_6, 2) IN ('84','87','39','73','61','62')
             GROUP BY 1, 2, 3
         ),
+        -- consignee_chapter_totals: total shipments per (consignee, chapter) cell,
+        -- the denominator for each supplier's share
         consignee_chapter_totals AS (
             SELECT consignee_key, hs_2, SUM(supplier_shipments) AS total_shipments
             FROM consignee_chapter_supplier
             GROUP BY 1, 2
         ),
+        -- supplier_shares: each supplier's fractional share of its cell's volume
+        -- (squared and summed below to get the HHI)
         supplier_shares AS (
             SELECT ccs.consignee_key, ccs.hs_2, ccs.supplier_key,
                    ccs.supplier_shipments * 1.0 / cct.total_shipments AS share
@@ -72,9 +80,7 @@ def get_concentration_heatmap_data(top_n_consignees: int = 30):
         FROM supplier_shares s
         JOIN top_consignees tc ON s.consignee_key = tc.consignee_key
         GROUP BY 1, 2
-    """.format(
-            top_n=top_n_consignees
-        )
+    """
     ).to_pandas()
 
     pivot = df.pivot(index="CONSIGNEE_NAME", columns="HS_2", values="SUPPLIER_HHI")
@@ -130,6 +136,14 @@ def get_ticker_for_consignee(consignee_name: str):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_shipment_summary_stats():
+    """Corpus-level KPIs for the Executive Overview panel.
+
+    Returns:
+        dict with total_shipments, unique_consignees, unique_suppliers,
+        total_landed_cost, and single_source_pairs (count of (consignee,
+        HS-6) pairs where one supplier accounts for >70% of volume, per
+        mart_concentration_metrics.is_single_source).
+    """
     session = get_active_session()
     row = session.sql(
         """
@@ -173,6 +187,8 @@ def get_hs_chapter_breakdown():
         SELECT LEFT(hs_6, 2) AS hs_2, COUNT(*) AS shipments
         FROM LADINGLENS_DB.GOLD.FACT_SHIPMENTS
         WHERE hs_6 IS NOT NULL
+          -- this project's deliberately scoped chapter set (Phase 3/4 target
+          -- scope, not a data gap) -- matches HS_CHAPTER_LABELS in theme.py
           AND LEFT(hs_6, 2) IN ('84','87','39','73','61','62')
         GROUP BY 1
         ORDER BY 2 DESC
@@ -277,6 +293,10 @@ def run_agent_query(question: str):
         t = block.get("type")
         if t == "text":
             text_parts.append(block["text"])
+        # system_execute_sql / system_agentic_semantic_context are Cortex
+        # Agent's own internal semantic-view plumbing, not tools this project
+        # registered -- excluded so the UI's "tools used" trace only shows
+        # query_shipments / retrieve_10k_risk_factors / simulate_tariff_scenario.
         elif t == "tool_use" and block["tool_use"].get("name") not in (
             None,
             "system_execute_sql",
@@ -306,13 +326,14 @@ def run_agent_query(question: str):
     }
 
 
-# Rough per-token cost, NOT a measured figure. Based on publicly reported
-# Cortex AI Functions pricing for Claude Opus (~12 AI Credits per million
-# tokens, AI Credits at $2.00/credit global rate) as of mid-2026 -- see
+# Cost estimate uses published Cortex AI Functions pricing, not a measured
+# billing figure -- refresh against current Snowflake docs if rates change.
+# Blended rate below (~12 AI Credits per million tokens at the global
+# per-credit rate) is for the specific model this agent runs on; see
 # docs/roadmap.md's Observability section for why this can't be reconciled
 # against actual billing (CORTEX_FUNCTIONS_USAGE_HISTORY still returns zero
-# rows for this account as of Phase 10). Treated as a single blended
-# input+output rate since a precise input/output split wasn't available.
+# rows for this account). Treated as a single blended input+output rate
+# since a precise input/output split wasn't available.
 _ESTIMATED_CREDITS_PER_MILLION_TOKENS = 12.0
 _ESTIMATED_USD_PER_CREDIT = 2.00
 

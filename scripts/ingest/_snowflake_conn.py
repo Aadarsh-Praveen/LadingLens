@@ -13,6 +13,15 @@ from cryptography.hazmat.primitives import serialization
 
 
 def connect():
+    """Open a snowflake-connector-python connection using key-pair auth.
+
+    Reads SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PRIVATE_KEY_PATH,
+    SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE, and
+    SNOWFLAKE_SCHEMA from the environment.
+
+    Returns:
+        snowflake.connector.SnowflakeConnection
+    """
     private_key_path = os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"]
     with open(private_key_path, "rb") as key_file:
         p_key = serialization.load_pem_private_key(key_file.read(), password=None)

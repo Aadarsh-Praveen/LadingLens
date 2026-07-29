@@ -1,5 +1,10 @@
+"""LadingLens Streamlit-in-Snowflake entry point: wires the 5 panels
+(Executive Overview, Concentration Heatmap, Scenario Simulator, Ask
+LadingLens, Observability) into tabs."""
+
+from panels import agent_chat, executive, heatmap, observability, scenarios
+
 import streamlit as st
-from panels import executive, heatmap, scenarios, agent_chat, observability
 
 st.set_page_config(
     page_title="LadingLens",

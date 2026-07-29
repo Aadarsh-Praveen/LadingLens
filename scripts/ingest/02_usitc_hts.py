@@ -8,7 +8,7 @@ Idempotent: CREATE OR REPLACE TABLE on every run.
 import csv
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import requests
@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _snowflake_conn import connect  # noqa: E402
+from _snowflake_conn import connect
 
 HTS_URL = "https://hts.usitc.gov/reststop/exportList?from=0&to=99&format=JSON&styles=false"
 HTS_FALLBACK_URL = "https://hts.usitc.gov/reststop/file?filename=htsdata.json"
@@ -29,8 +29,16 @@ STAGE = "LADINGLENS_DB.STAGE.RAW_STAGE"
 
 
 def download_hts():
+    """Fetch the current HTS export, trying the primary reststop endpoint
+    first and falling back to the static file endpoint if it fails.
+
+    Returns:
+        (data, dest_path) -- the parsed JSON records and the path they were
+        saved to under data/raw/hts/.
+    """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    dest = RAW_DIR / f"hts_{date.today().isoformat()}.json"
+    dest = RAW_DIR / f"hts_{date.today().isoformat()}.json"  # noqa: DTZ011 -- a run-date
+    # filename label, not a point-in-time timestamp; timezone-awareness isn't meaningful here.
 
     for url in (HTS_URL, HTS_FALLBACK_URL):
         try:
@@ -41,7 +49,7 @@ def download_hts():
             dest.write_text(json.dumps(data))
             print(f"Saved {len(data)} HTS records to {dest}")
             return data, dest
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- try the fallback URL on any failure
             print(f"  failed: {exc}")
 
     print("Both HTS endpoints failed. Aborting.")
@@ -49,6 +57,9 @@ def download_hts():
 
 
 def flatten(records):
+    """Flatten raw HTS JSON records into flat rows, deriving the hs2/hs4/hs6/
+    hs8/hs10 code prefixes from the dotted htsno field (e.g. "8471.30.01"
+    -> hs2="84", hs6="847130")."""
     rows = []
     for r in records:
         hts_number = (r.get("htsno") or "").strip()
@@ -83,7 +94,8 @@ def flatten(records):
 
 
 def write_csv(rows):
-    csv_path = RAW_DIR / f"hts_{date.today().isoformat()}.csv"
+    csv_path = RAW_DIR / f"hts_{date.today().isoformat()}.csv"  # noqa: DTZ011 -- filename
+    # label, not a point-in-time timestamp; see download_hts for the same rationale.
     fieldnames = [
         "hts_number",
         "description",
@@ -173,7 +185,9 @@ def load_to_snowflake(csv_path):
 
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting USITC HTS ingest")
+    """Run the full HTS ingest: download, flatten to CSV, load to Snowflake,
+    and sanity-check the loaded row/chapter counts against expected ranges."""
+    print(f"[{datetime.now(UTC).isoformat()}] Starting USITC HTS ingest")
     data, _ = download_hts()
     rows = flatten(data)
     csv_path = write_csv(rows)

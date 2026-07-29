@@ -291,11 +291,11 @@
       to the Phase 5 classifier at all).
 
     **Seed methodology caveat**: `hs_eval_seed_v2`'s labels were drafted with LLM
-    assistance (Claude, referencing USITC/tariffnumber HS-6 code descriptions), then
-    reviewed by a human, rather than fully independent human labeling on all 30 rows —
-    an interview-defensible evaluation would use the latter, but the project timeline
-    didn't accommodate it. Treat the reported accuracy as a floor estimate, not a
-    precise ground-truth score. The qualitative spot-checks across distinct product
+    assistance referencing USITC HTS reference tables, then human-reviewed. Documented
+    as a methodological caveat: an interview-defensible eval would require
+    fully-independent human expert labeling on all 30 rows; timeline did not
+    accommodate this. Reported accuracy is a floor estimate, not a precise
+    ground-truth score. The qualitative spot-checks across distinct product
     categories from Steps 3-4.5 (correct chapter-39 plastics override for vinyl
     flooring, correct swine-meat HS-4 for frozen pork variants, a correct `980500`
     override reading an embedded code directly out of the text for a military
@@ -948,3 +948,10 @@
       interviewer can open directly in Snowsight.
     - Phase 10 (observability + demo video) has a fully working, visually
       confirmed product to record and instrument.
+
+## Platform Observations
+
+- `SNOWFLAKE.CORTEX.SEARCH_PREVIEW` response shape appears to have drifted
+  between Snowflake releases — direct SQL callers should handle both the
+  `:results`-key format and alternative payload shapes gracefully. Cortex
+  Agent's internal `cortex_search` tool consumption is unaffected.

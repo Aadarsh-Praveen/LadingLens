@@ -9,7 +9,7 @@ Idempotent: CREATE OR REPLACE TABLE wipes and reloads on every run.
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _snowflake_conn import connect  # noqa: E402
+from _snowflake_conn import connect
 
 BOL_FILE = REPO_ROOT / "data" / "raw" / "bol" / "export_sample_countries_challenge_with_orgs.csv.gz"
 GDRIVE_URL = "https://drive.google.com/open?id=1tMkoOGF9lC6RJXm5DzmFJlvcIprTY0mI"
@@ -95,7 +95,8 @@ def try_create_iceberg_volume(cur):
         )
         print(f"Created (or found existing) external volume {ICEBERG_VOLUME}.")
         return True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- intentionally broad: any external-volume
+        # creation failure should fall back to a regular table, not crash the ingest.
         print(f"WARNING: could not create external volume ({exc}).")
         print("Falling back to a regular (non-Iceberg) table.")
         return False
@@ -119,7 +120,8 @@ def create_table(cur, use_iceberg):
             )
             print(f"Created Iceberg table {TABLE}.")
             return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- intentionally broad, same rationale
+            # as try_create_iceberg_volume above: fall back rather than crash.
             print(f"WARNING: Iceberg table creation failed ({exc}). Falling back to regular table.")
 
     cur.execute(f"CREATE OR REPLACE TABLE {TABLE} (\n    {cols_ddl}\n)")
@@ -128,6 +130,14 @@ def create_table(cur, use_iceberg):
 
 
 def put_and_copy(cur, multi_line=False):
+    """Stage the local BoL file and COPY INTO the target table.
+
+    Args:
+        cur: an open Snowflake cursor.
+        multi_line: if True, sets the file format's MULTI_LINE option for a
+            retry pass after record-boundary rejection errors on the first
+            attempt (see needs_multiline_retry).
+    """
     cur.execute(
         f"PUT file://{BOL_FILE} @{STAGE}/bol/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE PARALLEL=4"
     )
@@ -174,6 +184,9 @@ def summarize_copy_results(results):
 
 
 def needs_multiline_retry(error_messages):
+    """True if any COPY INTO error message indicates a record-boundary
+    problem (embedded newlines within a quoted field) that MULTI_LINE=TRUE
+    would fix, rather than a genuine data-quality rejection."""
     markers = ("end of record", "multi-line", "number of columns")
     return any(any(m in msg.lower() for m in markers) for msg in error_messages)
 
@@ -203,7 +216,10 @@ def post_load_verify(cur):
 
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting BoL shipments ingest")
+    """Run the full BoL ingest: create the table (Iceberg or regular), load
+    via PUT + COPY INTO, retry once with MULTI_LINE=TRUE if the first pass
+    hits record-boundary rejections, then verify row counts."""
+    print(f"[{datetime.now(UTC).isoformat()}] Starting BoL shipments ingest")
     check_prerequisite()
 
     conn = connect()
@@ -213,7 +229,7 @@ def main():
         used_iceberg = create_table(cur, iceberg_ok)
 
         results = put_and_copy(cur, multi_line=False)
-        rows_loaded, errors_seen, error_messages = summarize_copy_results(results)
+        _rows_loaded, errors_seen, error_messages = summarize_copy_results(results)
 
         if errors_seen > 0 and needs_multiline_retry(error_messages):
             print(
@@ -222,7 +238,7 @@ def main():
             )
             create_table(cur, used_iceberg)
             results = put_and_copy(cur, multi_line=True)
-            rows_loaded, errors_seen, error_messages = summarize_copy_results(results)
+            _rows_loaded, errors_seen, error_messages = summarize_copy_results(results)
 
         total = post_load_verify(cur)
 

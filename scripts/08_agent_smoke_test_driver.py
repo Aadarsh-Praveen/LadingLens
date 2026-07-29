@@ -12,14 +12,14 @@ along the way (the agent frequently self-corrects from these -- they don't
 necessarily mean the final answer failed), and the synthesized final answer.
 """
 
-import sys
 import json
+import sys
 import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ingest"))
-from _snowflake_conn import connect  # noqa: E402
+from _snowflake_conn import connect
 
 AGENT = "LADINGLENS_DB.SEMANTIC.LADINGLENS_AGENT"
 
@@ -44,6 +44,11 @@ QUESTIONS = [
 
 
 def run_question(cur, question):
+    """Send one question to the agent and parse its content blocks.
+
+    Returns:
+        (elapsed_seconds, tools_used, tool_errors, final_answer_text)
+    """
     payload = json.dumps(
         {"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]}
     )
@@ -56,6 +61,9 @@ def run_question(cur, question):
     tools_used, tool_errors, text_parts = [], [], []
     for block in data.get("content", []):
         t = block.get("type")
+        # system_execute_sql / system_agentic_semantic_context are Cortex
+        # Agent's own internal semantic-view plumbing, not tools this project
+        # registered -- excluded from the reported tool list.
         if t == "tool_use" and block["tool_use"].get("name") not in (
             None,
             "system_execute_sql",
@@ -76,6 +84,8 @@ def run_question(cur, question):
 
 
 def main():
+    """Run all smoke-test questions in sequence and print per-question
+    results plus the overall p50/p95 latency."""
     conn = connect()
     cur = conn.cursor()
     latencies = []

@@ -1,3 +1,10 @@
+# Internal working docs (not for public repo, but preserved locally):
+# - docs/DEMO.md — demo video recording script
+# - docs/submission-form-draft.md — hackathon submission draft
+# - docs/linkedin-draft.md — LinkedIn post draft
+# - docs/phases/ — phase-by-phase build specifications (preserved
+#   locally for personal reference and interview prep)
+
 .venv/
 .env
 *.pyc
@@ -18,3 +25,8 @@ dbt/**/profiles.yml
 
 # dbt anonymous usage telemetry (machine-local)
 dbt/.user.yml
+
+docs/DEMO.md
+docs/submission-form-draft.md
+docs/linkedin-draft.md
+docs/phases/

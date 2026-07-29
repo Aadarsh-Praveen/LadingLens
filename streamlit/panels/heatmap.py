@@ -7,19 +7,21 @@ values). The HS-6 drill-down below the heatmap uses mart_concentration_metrics
 at its native grain to give users the underlying detail.
 """
 
-import streamlit as st
 import plotly.express as px
-
 from utils.snowflake_queries import (
+    get_10k_search_for_ticker,
     get_concentration_heatmap_data,
     get_supplier_breakdown_for_cell,
     get_ticker_for_consignee,
-    get_10k_search_for_ticker,
 )
 from utils.theme import HS_CHAPTER_LABELS
 
+import streamlit as st
+
 
 def render():
+    """Render the concentration heatmap panel, plus its HS-6 drill-down and
+    linked 10-K risk-factor expander for exact-confidence ticker matches."""
     st.markdown("## Supplier Concentration Heatmap")
     st.markdown(
         "HHI concentration index by consignee x HS chapter (0-1 scale; 1.0 = fully "
@@ -42,7 +44,7 @@ def render():
         zmin=0,
         zmax=1,
     )
-    fig.update_layout(height=700, margin=dict(l=10, r=10, t=10, b=10))
+    fig.update_layout(height=700, margin={"l": 10, "r": 10, "t": 10, "b": 10})
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### Detail view")

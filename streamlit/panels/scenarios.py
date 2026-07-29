@@ -1,16 +1,19 @@
 """Panel 3: Tariff Scenario Simulator -- interactive what-if picker."""
 
-import streamlit as st
-
 from utils.snowflake_queries import (
-    get_scenario_examples,
     get_consignee_options,
+    get_scenario_examples,
     run_scenario_simulation,
 )
 from utils.theme import HS_CHAPTER_LABELS, ORIGIN_COUNTRIES
 
+import streamlit as st
+
 
 def render():
+    """Render the scenario simulator panel: pre-computed example scenarios
+    plus an interactive consignee/rate/HS-chapter/country picker that calls
+    the live SIMULATE_TARIFF_SCENARIO procedure."""
     st.markdown("## Tariff Scenario Simulator")
     st.markdown("Simulate the impact of tariff changes on a consignee's landed cost.")
 

@@ -10,18 +10,21 @@ an automated groundedness/relevance scoring layer on top.
 
 import json
 
-import streamlit as st
 import plotly.express as px
-
 from utils.snowflake_queries import (
     get_agent_trace_stats,
-    get_recent_traces,
     get_latency_distribution,
+    get_recent_traces,
     get_tool_usage_breakdown,
 )
 
+import streamlit as st
+
 
 def render():
+    """Render the Observability panel: KPI cards, latency and tool-usage
+    charts, and a recent-traces table, all sourced from AGENT_TRACES. Shows
+    an empty-state message if no queries have been logged yet."""
     st.markdown("## Observability")
     st.markdown(
         "Real traces logged from every Ask LadingLens query. Estimated cost is "

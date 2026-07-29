@@ -15,9 +15,9 @@ import json
 import threading
 import time
 
-import streamlit as st
+from utils.snowflake_queries import log_agent_trace, run_agent_query
 
-from utils.snowflake_queries import run_agent_query, log_agent_trace
+import streamlit as st
 
 EXAMPLE_QUESTIONS = [
     "What does Caterpillar disclose about tariff exposure in their 10-K?",
@@ -79,6 +79,9 @@ def _run_with_progress(question: str):
 
 
 def render():
+    """Render the Ask LadingLens chat panel: example-question shortcuts,
+    conversation history with tool-use traces, and the chat input that
+    drives LADINGLENS_AGENT via _run_with_progress."""
     st.markdown("## Ask LadingLens")
     st.markdown(
         "Ask questions about supply chain concentration, tariff exposure, or "
@@ -122,8 +125,8 @@ def render():
 
         try:
             log_agent_trace(user_question, response, total_latency_ms)
-        except Exception:  # noqa: BLE001
-            pass  # observability logging must never break the chat UI
+        except Exception:  # noqa: BLE001, S110 -- best-effort logging must never
+            pass  # break the chat UI; there's nothing actionable to do with the error here
 
         st.session_state.chat_history.append(
             {

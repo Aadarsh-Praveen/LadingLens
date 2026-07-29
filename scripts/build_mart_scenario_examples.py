@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ingest"))
-from _snowflake_conn import connect  # noqa: E402
+from _snowflake_conn import connect
 
 SCENARIOS = [
     (
@@ -49,6 +49,9 @@ TABLE = "LADINGLENS_DB.GOLD.MART_SCENARIO_EXAMPLES"
 
 
 def main():
+    """Rebuild MART_SCENARIO_EXAMPLES: CALL SIMULATE_TARIFF_SCENARIO for
+    every (top-20 consignee, canonical scenario) pair and keep only rows
+    where the scenario produced a positive cost delta."""
     conn = connect()
     cur = conn.cursor()
 
