@@ -144,10 +144,6 @@ docs/architecture/         Architecture diagrams referenced in this README and d
 data/sources.md            Full data provenance + every documented data-quality catch
 ```
 
-## Project Timeline
-
-Built solo across 10 phases in ~7-8 calendar days (first commit 2026-07-22, most recent commit 2026-07-29) — foundation and ingestion, EDA and scope-pivot, dbt entity resolution, retrieval-augmented HS classification, the Gold star schema and semantic view, Cortex Search, the Cortex Agent and scenario simulator, the Streamlit UI, and finally observability/CI/CD/demo packaging, in that order.
-
 ## Data Quality Discipline
 
 This project treats data-quality findings as a first-class deliverable, not an afterthought. 40+ catches are documented across phases with root cause analysis — not just "found a bug," but *why* it happened and what the fix was. A few representative examples:
